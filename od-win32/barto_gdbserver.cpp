@@ -458,7 +458,7 @@ namespace barto_gdbserver {
 	void handle_packet() {
 		tracker _;
 		if(data_available()) {
-			char buf[512];
+			char buf[65536];
 			auto result = recv(gdbconn, buf, sizeof(buf) - 1, 0);
 			if(result > 0) {
 				buf[result] = '\0';
@@ -493,7 +493,7 @@ namespace barto_gdbserver {
 								ack = "+";
 								response = "$";
 								if(request.substr(0, strlen("qSupported")) == "qSupported") {
-									response += "PacketSize=512;BreakpointCommands+;swbreak+;hwbreak+;QStartNoAckMode+;vContSupported+;";
+									response += "PacketSize=65536;BreakpointCommands+;swbreak+;hwbreak+;QStartNoAckMode+;vContSupported+;";
 								} else if(request.substr(0, strlen("qAttached")) == "qAttached") {
 									response += "1";
 								} else if(request.substr(0, strlen("qTStatus")) == "qTStatus") {
@@ -842,6 +842,96 @@ namespace barto_gdbserver {
 									response += get_registers();
 								} else if(request[0] == 'p') { // get register
 									response += get_register(strtoul(request.data() + 1, nullptr, 16));
+								} else if(request[0] == 'P') { // set register
+									auto eq = request.find('=');
+									if(eq != std::string::npos) {
+										int reg = strtoul(request.data() + 1, nullptr, 16);
+										uint32_t val = strtoul(request.data() + eq + 1, nullptr, 16);
+										switch(reg) {
+										case D0: case D1: case D2: case D3: case D4: case D5: case D6: case D7:
+											m68k_dreg(regs, reg - D0) = val;
+											response += "OK";
+											break;
+										case A0: case A1: case A2: case A3: case A4: case A5: case A6: case A7:
+											m68k_areg(regs, reg - A0) = val;
+											response += "OK";
+											break;
+										case SR:
+											regs.sr = (uae_u16)val;
+											MakeFromSR();
+											response += "OK";
+											break;
+										case PC:
+											regs.pc = val;
+											response += "OK";
+											break;
+										default:
+											response += "E01";
+											break;
+										}
+									} else
+										response += "E01";
+								} else if(request[0] == 'G') { // set all registers
+									// Expect 18 registers x 8 hex chars = 144 chars after 'G'
+									if(request.length() >= 1 + 18 * 8) {
+										const char* p = request.data() + 1;
+										for(int reg = 0; reg < 18; reg++) {
+											char tmp[9];
+											memcpy(tmp, p + reg * 8, 8);
+											tmp[8] = '\0';
+											uint32_t val = strtoul(tmp, nullptr, 16);
+											switch(reg) {
+											case D0: case D1: case D2: case D3: case D4: case D5: case D6: case D7:
+												m68k_dreg(regs, reg - D0) = val;
+												break;
+											case A0: case A1: case A2: case A3: case A4: case A5: case A6: case A7:
+												m68k_areg(regs, reg - A0) = val;
+												break;
+											case SR:
+												regs.sr = (uae_u16)val;
+												break;
+											case PC:
+												regs.pc = val;
+												break;
+											}
+										}
+										MakeFromSR();
+										response += "OK";
+									} else
+										response += "E01";
+								} else if(request[0] == 'M') { // write memory
+									auto comma = request.find(',');
+									auto colon = request.find(':');
+									if(comma != std::string::npos && colon != std::string::npos) {
+										uaecptr adr = strtoul(request.data() + 1, nullptr, 16);
+										int len = strtoul(request.data() + comma + 1, nullptr, 16);
+										const char* hexdata = request.data() + colon + 1;
+										barto_log("GDBSERVER: write 0x%x bytes at 0x%x\n", len, adr);
+										bool ok = true;
+										for(int i = 0; i < len; i++) {
+											uint8_t v{};
+											char hi = hexdata[i * 2];
+											char lo = hexdata[i * 2 + 1];
+											if(hi >= '0' && hi <= '9') v |= (hi - '0') << 4;
+											else if(hi >= 'a' && hi <= 'f') v |= (hi - 'a' + 10) << 4;
+											else if(hi >= 'A' && hi <= 'F') v |= (hi - 'A' + 10) << 4;
+											if(lo >= '0' && lo <= '9') v |= (lo - '0');
+											else if(lo >= 'a' && lo <= 'f') v |= (lo - 'a' + 10);
+											else if(lo >= 'A' && lo <= 'F') v |= (lo - 'A' + 10);
+											if(debug_safe_addr(adr + i, 1)) {
+												addrbank* ad = &get_mem_bank(adr + i);
+												ad->bput(adr + i, v);
+											} else {
+												barto_log("GDBSERVER: error writing memory at 0x%x\n", adr + i);
+												response += "E01";
+												ok = false;
+												break;
+											}
+										}
+										if(ok)
+											response += "OK";
+									} else
+										response += "E01";
 								} else if(request[0] == 'm') { // read memory
 									auto comma = request.find(',');
 									if(comma != std::string::npos) {
