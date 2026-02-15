@@ -637,7 +637,99 @@ namespace barto_gdbserver {
 											deactivate_debugger();
 											return; // response is sent when profile is finished (vsync)
 										}
-									} else if(cmd == "reset" && currprefs.debugging_trigger[0]) {
+									} else if(cmd.substr(0, strlen("screenshot")) == "screenshot") {
+									// syntax: monitor screenshot <filepath>
+									auto s = cmd.substr(strlen("screenshot"));
+									// trim leading whitespace
+									while(!s.empty() && s[0] == ' ')
+										s = s.substr(1);
+									if(s.empty()) {
+										barto_log("GDBSERVER: screenshot: no path specified\n");
+										response += "E01";
+									} else {
+										std::string filepath = s;
+										// strip surrounding quotes if present
+										if(filepath.size() >= 2 && filepath.front() == '"' && filepath.back() == '"')
+											filepath = filepath.substr(1, filepath.size() - 2);
+
+										barto_log("GDBSERVER: screenshot to '%s'\n", filepath.c_str());
+
+										// render current frame and capture screenshot
+										vsync_display_render();
+										int monid = getfocusedmonitor();
+										vidbuf_description* avidinfo = &adisplays[monid].gfxvidinfo;
+										vidbuffer* vb = &avidinfo->drawbuffer;
+										if(screenshot_prepare(monid, vb) == 1) {
+											auto sbi = screenshot_get_bi();
+											auto sbi_bits = (const uint8_t*)screenshot_get_bits();
+											if(sbi && sbi_bits && sbi->bmiHeader.biBitCount == 24) {
+												const auto w = sbi->bmiHeader.biWidth;
+												const auto h = sbi->bmiHeader.biHeight;
+												const auto pitch = sbi->bmiHeader.biSizeImage / sbi->bmiHeader.biHeight;
+												// flip vertically and swap BGR -> RGB
+												auto bits = std::make_unique<uint8_t[]>(w * 3 * h);
+												for(int y = 0; y < h; y++) {
+													for(int x = 0; x < w; x++) {
+														bits[y * w * 3 + x * 3 + 0] = sbi_bits[(h - 1 - y) * pitch + x * 3 + 2];
+														bits[y * w * 3 + x * 3 + 1] = sbi_bits[(h - 1 - y) * pitch + x * 3 + 1];
+														bits[y * w * 3 + x * 3 + 2] = sbi_bits[(h - 1 - y) * pitch + x * 3 + 0];
+													}
+												}
+												// write PNG to file using stb_image_write
+												if(stbi_write_png(filepath.c_str(), w, h, 3, bits.get(), w * 3)) {
+													barto_log("GDBSERVER: screenshot saved: %dx%d to '%s'\n", w, h, filepath.c_str());
+													// send back dimensions as hex-encoded text
+													char info[256];
+													snprintf(info, sizeof(info), "OK %dx%d %s", w, h, filepath.c_str());
+													response += to_hex(std::string(info));
+												} else {
+													barto_log("GDBSERVER: screenshot write failed: '%s'\n", filepath.c_str());
+													response += "E03";
+												}
+											} else {
+												barto_log("GDBSERVER: screenshot: unsupported format (bpp=%d)\n",
+													sbi ? sbi->bmiHeader.biBitCount : 0);
+												response += "E02";
+											}
+										} else {
+											barto_log("GDBSERVER: screenshot_prepare failed\n");
+											response += "E02";
+										}
+									}
+								} else if(cmd.substr(0, strlen("disasm")) == "disasm") {
+									// syntax: monitor disasm <addr> [<count>]
+									auto s = cmd.substr(strlen("disasm"));
+									while(!s.empty() && s[0] == ' ')
+										s = s.substr(1);
+									if(s.empty()) {
+										barto_log("GDBSERVER: disasm: no address specified\n");
+										response += "E01";
+									} else {
+										uaecptr addr = strtoul(s.c_str(), nullptr, 16);
+										int count = 10; // default
+										auto space = s.find(' ');
+										if(space != std::string::npos)
+											count = max(1, min(100, atoi(s.c_str() + space + 1)));
+
+										barto_log("GDBSERVER: disasm at 0x%x, count %d\n", addr, count);
+										std::string output;
+										TCHAR instrname[256], instrcode[256];
+										for(int i = 0; i < count; i++) {
+											uaecptr nextpc;
+											instrname[0] = 0;
+											instrcode[0] = 0;
+											sm68k_disasm(instrname, instrcode, addr, &nextpc, 0xffffffff);
+											char line[1024];
+											auto instrname_utf8 = string_to_utf8(instrname);
+											auto instrcode_utf8 = string_to_utf8(instrcode);
+											snprintf(line, sizeof(line), "%08x : %-20s %s\n",
+												addr, instrcode_utf8.c_str(), instrname_utf8.c_str());
+											output += line;
+											addr = nextpc;
+										}
+										response += to_hex(output);
+									}
+								} else if(cmd == "reset" && currprefs.debugging_trigger[0]) {
 										savestate_quick(0, 0); // restore state saved at process entry
 										barto_debug_resources_count = 0;
 										response += "OK";
