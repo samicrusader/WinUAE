@@ -27,11 +27,38 @@ uae_u32 returnregx(int regid);
 #define	MAX_HIST 500
 #define MAX_LINEWIDTH 10000
 
+// BARTO
+struct barto_debug_resource {
+	unsigned int address;
+	unsigned int size;
+	char name[32];
+	unsigned short /*enum debug_resource_type*/ type;
+	unsigned short /*enum debug_resource_flags*/ flags;
+
+	union {
+		struct bitmap {
+			short width;
+			short height;
+			short numPlanes;
+		} bitmap;
+		struct palette {
+			short numEntries;
+		} palette;
+	};
+};
+extern int barto_debug_resources_count;
+extern barto_debug_resource barto_debug_resources[1024];
+extern unsigned int barto_debug_idle_count;
+extern uint32_t barto_debug_idle[1024]; // top bit: idle, other bits: cycle / (CYCLE_UNIT / 2)
+// BARTO END
+
 extern int debugging;
 extern int memwatch_enabled;
 extern int exception_debugging;
 extern int debug_copper;
 extern int debug_dma, debug_heatmap;
+extern int debug_barto; // BARTO
+extern int debug_barto_cmd(struct TrapContext* ctx, uae_u32 arg1, uae_u32 arg2, uae_u32 arg3, uae_u32 arg4, uae_u32 arg5); // BARTO
 extern uae_u32 debug_sprite_mask;
 extern int debug_bpl_mask, debug_bpl_mask_one;
 extern int debugger_active;
@@ -225,6 +252,7 @@ struct peekdma
 };
 extern struct peekdma peekdma_data;
 
+#pragma pack(1) // BARTO
 struct dma_rec
 {
 	int hpos, vpos[2];
@@ -255,6 +283,7 @@ struct dma_rec
 	bool end;
 	bool cs, hs, vs;
 };
+#pragma pack() // BARTO
 
 extern struct dma_rec *last_dma_rec;
 
@@ -345,6 +374,7 @@ extern void record_rom_access(uaecptr, uae_u32 value, int size, bool rw);
 extern void record_dma_ipl(void);
 extern void record_dma_ipl_sample(void);
 extern void debug_mark_refreshed(uaecptr);
+extern struct dma_rec* get_dma_records(); // BARTO
 extern void debug_draw(uae_u8 *buf, uae_u8 *genlock, int line, int width, int height, uae_u32 *xredcolors, uae_u32 *xgreencolors, uae_u32 *xbluescolors);
 extern struct dma_rec *record_dma_next_cycle(int hpos, int vpos, int vvpos);
 extern int get_dma_debug_color(struct dma_rec *dr, int line, uae_u32 *cp);
@@ -356,6 +386,7 @@ extern int get_dma_debug_color(struct dma_rec *dr, int line, uae_u32 *cp);
 #define TRACE_SKIP_LINE 5
 #define TRACE_RAM_PC 6
 #define TRACE_IMMEDIATE 7
+#define TRACE_NRANGE_PC 8 //BARTO
 #define TRACE_CHECKONLY 10
 
 #else

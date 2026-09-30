@@ -522,7 +522,8 @@ static uae_s16 bpl1mod, bpl2mod;
 static uaecptr bplpt[MAX_PLANES];
 
 
-static uae_u16 bplcon0;
+/*static*/ struct color_entry current_colors; // BARTO
+uae_u16 bplcon0;
 static uae_u16 bplcon1, bplcon2, bplcon3, bplcon4;
 static uae_u32 bplcon0_res, bplcon0_planes, bplcon0_planes_limit;
 static int diwstrt, diwstop, diwhigh;
@@ -4974,7 +4975,7 @@ static void vsync_handler_render(void)
 
 static bool vsync_display_rendered;
 
-static void vsync_display_render(void)
+/*static*/ void vsync_display_render(void) // Barto
 {
 	if (!vsync_display_rendered) {
 		vsyncmintimepre = read_processor_time();

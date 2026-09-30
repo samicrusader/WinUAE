@@ -210,33 +210,36 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Test|x64'">
     <IgnoreImportLibrary>
     </IgnoreImportLibrary>
-    <ExecutablePath>$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x64;$(ExecutablePath)</ExecutablePath>
+    <ExecutablePath>c:\dev\bin;$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x64;$(ExecutablePath)</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Test|ARM64'">
     <IgnoreImportLibrary />
     <ExecutablePath>$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x64;$(ExecutablePath)</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">
-    <ExecutablePath>$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x86;$(ExecutablePath)</ExecutablePath>
+    <ExecutablePath>c:\dev\bin;$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x86;$(ExecutablePath)</ExecutablePath>
     <ExcludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(MSBuild_ExecutablePath);$(VC_LibraryPath_x86);</ExcludePath>
+    <TargetName>winuae-gdb</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <ExecutablePath>$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x86;$(ExecutablePath)</ExecutablePath>
+    <ExecutablePath>c:\dev\bin;$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x86;$(ExecutablePath)</ExecutablePath>
     <ExcludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(MSBuild_ExecutablePath);$(VC_LibraryPath_x86);</ExcludePath>
+    <TargetName>winuae-gdb</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">
-    <ExecutablePath>$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x86;$(ExecutablePath)</ExecutablePath>
+    <ExecutablePath>c:\dev\bin;$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x86;$(ExecutablePath)</ExecutablePath>
     <ExcludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);$(MSBuild_ExecutablePath);$(VC_LibraryPath_x86);</ExcludePath>
+    <TargetName>winuae-gdb</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='FullRelease|x64'">
-    <ExecutablePath>$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x64;$(ExecutablePath)</ExecutablePath>
+    <ExecutablePath>c:\dev\bin;$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x64;$(ExecutablePath)</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='FullRelease|ARM64'">
     <ExecutablePath>$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x64;$(ExecutablePath)</ExecutablePath>
     <OutDir>$(WinUAEBuildRoot)\$(Platform)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <ExecutablePath>$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x64;$(ExecutablePath)</ExecutablePath>
+    <ExecutablePath>c:\dev\bin;$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x64;$(ExecutablePath)</ExecutablePath>
     <CodeAnalysisRuleSet>NativeMinimumRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -1168,6 +1171,7 @@
     <ClCompile Include="..\ahidsound_dsonly.cpp" />
     <ClCompile Include="..\ahidsound_new.cpp" />
     <ClCompile Include="..\avioutput.cpp" />
+    <ClCompile Include="..\barto_gdbserver.cpp" />
     <ClCompile Include="..\blkdev_win32_ioctl.cpp" />
     <ClCompile Include="..\blkdev_win32_spti.cpp" />
     <ClCompile Include="..\bsdsock.cpp" />
@@ -1385,6 +1389,7 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\barto_gdbserver.h" />
     <ClInclude Include="..\resources\resource.h" />
   </ItemGroup>
   <ItemGroup>

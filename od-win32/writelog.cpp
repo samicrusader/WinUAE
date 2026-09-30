@@ -33,17 +33,17 @@ static void premsg (void)
 	ast[5] = 0;
 	ws = au_fs (ast);
 
-	MessageBoxA(NULL, "español", "ANSI", MB_OK);
-	MessageBoxW(NULL, _T("español"), _T("UTF-16"), MB_OK);
+	MessageBoxA(NULL, "espaï¿½ol", "ANSI", MB_OK);
+	MessageBoxW(NULL, _T("espaï¿½ol"), _T("UTF-16"), MB_OK);
 
-	as = ua (_T("español"));
+	as = ua (_T("espaï¿½ol"));
 	MessageBoxA(NULL, as, "ANSI:2", MB_OK);
 	ws = au (as);
 	MessageBoxW(NULL, ws, _T("UTF-16:2"), MB_OK);
 	xfree (ws);
 	xfree (as);
 
-	ws = au ("español");
+	ws = au ("espaï¿½ol");
 	MessageBoxW(NULL, ws, _T("UTF-16:3"), MB_OK);
 	as = ua (ws);
 	MessageBoxA(NULL, as, "ANSI:3", MB_OK);
@@ -688,6 +688,9 @@ void write_logx(const TCHAR *format, ...)
 	LeaveCriticalSection (&cs);
 }
 
+// BARTO
+namespace barto_gdbserver { void log_output(const TCHAR* string); }
+
 void write_log (const TCHAR *format, ...)
 {
 	int count;
@@ -696,7 +699,7 @@ void write_log (const TCHAR *format, ...)
 	TCHAR *bufp;
 	va_list parms;
 
-	if (!SHOW_CONSOLE && !console_logging && !debugfile) {
+	if (!SHOW_CONSOLE && !console_logging && !debugfile && !(currprefs.debugging_features & (1 << 2))) { // BARTO "gdbserver"
 		return;
 	}
 
@@ -756,15 +759,14 @@ void write_log (const TCHAR *format, ...)
 		xfree(utf8);
 	}
 
-#if 0
 	static int is_debugger_present = -1;
-	if (is_debugger_present == -1) {
+	if (is_debugger_present == -1)
 		is_debugger_present = IsDebuggerPresent();
-	}
-	if (is_debugger_present) {
+	if (is_debugger_present)
 		OutputDebugString(bufp);
-	}
-#endif
+	// BARTO
+	if (currprefs.debugging_features & (1 << 2))
+		barto_gdbserver::log_output(bufp);
 
 	lfdetected = 0;
 	if (bufp[0] != '\0' && bufp[_tcslen (bufp) - 1] == '\n') {

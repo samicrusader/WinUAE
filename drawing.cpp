@@ -1981,6 +1981,8 @@ static void refresh_indicator_init(void)
 	refresh_indicator_changed_prev = xcalloc(uae_u8, refresh_indicator_height);
 }
 
+static bool barto_always_changed = false; // BARTO
+
 bool drawing_can_lineoptimizations(void)
 {
 	if (currprefs.gfx_overscanmode < OVERSCANMODE_ULTRA &&
@@ -1988,7 +1990,7 @@ bool drawing_can_lineoptimizations(void)
 		currprefs.cs_color_burst || currprefs.gfx_grayscale || currprefs.monitoremu)) {
 		return false;
 	}
-	if ((lightpen_active && currprefs.lightpen_crosshair) || debug_dma >= 3 || debug_heatmap >= 2) {
+	if ((lightpen_active && currprefs.lightpen_crosshair) || debug_dma >= 3 || debug_heatmap >= 2 || refresh_indicator_buffer || barto_always_changed) { // BARTO
 		return false;
 	}
 	if (video_recording_active) {
@@ -2000,8 +2002,10 @@ bool drawing_can_lineoptimizations(void)
 static void draw_frame_extras(struct vidbuffer *vb, int y_start, int y_end)
 {
 #ifdef DEBUGGER
-	if (debug_dma > 2 || debug_heatmap > 1) {
+	if (debug_barto > 0 || debug_dma > 2 || debug_heatmap > 1) { // BARTO
 		if (denise_lock()) {
+			if(debug_barto > 0)
+				barto_always_changed = true;
 			for (int i = 0; i < vb->outheight; i++) {
 				int line = i;
 				draw_debug_status_line(vb->monitor_id, line);
@@ -7053,12 +7057,15 @@ Don't touch this if you don't know what you are doing.  */
 
 #define DOLINE_SWAP 0
 
-STATIC_INLINE uae_u32 GETLONG32_16(uae_u8 *P)
-{
-	uae_u32 v = (*(uae_u32 *)P);
+STATIC_INLINE uae_u32 GETLONG32_16(uae_u8* P) {
+	uae_u32 v = (*(uae_u32*)P);
 	v = (v >> 16) | (v << 16);
 	return v;
 }
+#define GETLONG32_8(P) (do_get_mem_long((uae_u32*)P))
+#define GETLONG32_32(P) (*((uae_u32*)P))
+#define GETLONG32_64(P) (*((uae_u32*)P))
+#define GETLONG64(P) (*(uae_u64*)P)
 #define GETLONG32_8(P) (do_get_mem_long((uae_u32*)P))
 #define GETLONG32_32(P) (*((uae_u32*)P))
 #define GETLONG32_64(P) (*((uae_u32*)P))

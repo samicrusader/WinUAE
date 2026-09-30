@@ -12,7 +12,7 @@
 
 #include "winuae_builddate.h"
 
-#define WINUAEPUBLICBETA 1
+#define WINUAEPUBLICBETA 0 // BARTO
 #define LANG_DLL 1
 #define LANG_DLL_FULL_VERSION_MATCH 1
 
@@ -22,6 +22,7 @@
 #define WINUAEBETA _T("")
 #endif
 
+#define WINUAEEXTRA _T("Barto's GDBServer Edition") // BARTO
 //#define WINUAEEXTRA _T("AmiKit Preview")
 //#define WINUAEEXTRA _T("Amiga Forever Edition")
 

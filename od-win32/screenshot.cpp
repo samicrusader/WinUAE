@@ -84,6 +84,8 @@ static HDC surface_dc, offscreen_dc;
 static int surface_dc_monid;
 static BITMAPINFO *bi; // bitmap info
 static LPVOID lpvBits = NULL; // pointer to bitmap bits array
+BITMAPINFO* screenshot_get_bi() { return bi; } // BARTO
+void* screenshot_get_bits() { return lpvBits; } // BARTO
 static HBITMAP offscreen_bitmap;
 static int screenshot_prepared;
 static int screenshot_multi_start;
@@ -592,7 +594,7 @@ oops:
 	return 0;
 }
 
-static int screenshot_prepare(int monid, struct vidbuffer *vb)
+/*static*/ int screenshot_prepare(int monid, struct vidbuffer *vb) // Barto
 {
 	return screenshot_prepare(monid, 1, vb, false);
 }
