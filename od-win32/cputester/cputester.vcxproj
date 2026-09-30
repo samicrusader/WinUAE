@@ -98,29 +98,29 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">
-    <IncludePath>c:\dev\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\dev\lib\x86;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(WinUAE3rdParty)\lib\x86;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <IncludePath>c:\dev\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\dev\lib\x86;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(WinUAE3rdParty)\lib\x86;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Test|x64'">
-    <IncludePath>c:\dev\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\dev\lib\x64;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+    <IncludePath>$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(WinUAE3rdParty)\lib\x64;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Test|ARM64'">
-    <IncludePath>C:\dev\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\dev\lib\arm64;$(VC_LibraryPath_ARM64);$(WindowsSDK_LibraryPath_ARM64)</LibraryPath>
+    <IncludePath>$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(WinUAE3rdParty)\lib\arm64;$(VC_LibraryPath_ARM64);$(WindowsSDK_LibraryPath_ARM64)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>c:\dev\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\dev\lib\x64;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+    <IncludePath>$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(WinUAE3rdParty)\lib\x64;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
     <TargetName>cputestgen64</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
-    <IncludePath>c:\dev\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\dev\lib\arm64;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
+    <IncludePath>$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(WinUAE3rdParty)\lib\arm64;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64)</LibraryPath>
     <TargetName>cputestgen64</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">

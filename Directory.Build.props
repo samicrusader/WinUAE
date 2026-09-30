@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto-imported by MSBuild for every project under this tree.
+  Replaces upstream's hardcoded c:\dev dependency root (winuaeinclibs.zip)
+  with the copy vendored in-tree, so builds do not depend on machine state.
+-->
+<Project>
+  <PropertyGroup>
+    <WinUAE3rdParty Condition="'$(WinUAE3rdParty)'==''">$(MSBuildThisFileDirectory)3rdparty</WinUAE3rdParty>
+    <WinUAEBuildRoot Condition="'$(WinUAEBuildRoot)'==''">$(MSBuildThisFileDirectory)build</WinUAEBuildRoot>
+  </PropertyGroup>
+</Project>
