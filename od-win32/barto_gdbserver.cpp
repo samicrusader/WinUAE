@@ -19,6 +19,7 @@
 #include "drawing.h" // color_entry
 #include "win32.h"
 #include "savestate.h"
+#include "disk.h" // monitor df<n> insert/eject
 
 extern BITMAPINFO* screenshot_get_bi();
 extern void* screenshot_get_bits();
@@ -143,6 +144,108 @@ namespace barto_gdbserver {
 		return ret;
 	}
 
+	// ── helpers for the local monitor extensions ──────────────────────────
+	static bool mon_trace_enabled = true;
+
+	static std::string mon_trim(const std::string& s) {
+		size_t a = s.find_first_not_of(" \t");
+		if(a == std::string::npos)
+			return std::string();
+		size_t b = s.find_last_not_of(" \t");
+		return s.substr(a, b - a + 1);
+	}
+
+	static std::vector<std::string> mon_split(const std::string& s) {
+		std::vector<std::string> out;
+		size_t i = 0;
+		while(i < s.length()) {
+			while(i < s.length() && (s[i] == ' ' || s[i] == '\t'))
+				i++;
+			if(i >= s.length())
+				break;
+			if(s[i] == '"') {
+				size_t k = s.find('"', i + 1);
+				if(k == std::string::npos)
+					k = s.length();
+				out.push_back(s.substr(i + 1, k - i - 1));
+				i = (k < s.length()) ? k + 1 : k;
+				continue;
+			}
+			size_t j = i;
+			while(j < s.length() && s[j] != ' ' && s[j] != '\t')
+				j++;
+			out.push_back(s.substr(i, j - i));
+			i = j;
+		}
+		return out;
+	}
+
+	// monitor arguments are hex by convention, with optional 0x
+	static uae_u32 mon_num(const std::string& s) {
+		const char* p = s.c_str();
+		if(s.length() > 2 && p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
+			return (uae_u32)strtoul(p + 2, nullptr, 16);
+		return (uae_u32)strtoul(p, nullptr, 16);
+	}
+
+	static uae_u32 mon_source_mask(const std::string& s) {
+		if(s == "all")     return MW_MASK_ALL;
+		if(s == "cpu")     return MW_MASK_CPU_I | MW_MASK_CPU_D_R | MW_MASK_CPU_D_W;
+		if(s == "cpud")    return MW_MASK_CPU_D_R | MW_MASK_CPU_D_W;
+		if(s == "cpudr")   return MW_MASK_CPU_D_R;
+		if(s == "cpudw")   return MW_MASK_CPU_D_W;
+		if(s == "copper")  return MW_MASK_COPPER;
+		if(s == "disk")    return MW_MASK_DISK;
+		if(s == "blitter") return MW_MASK_BLITTER_A | MW_MASK_BLITTER_B | MW_MASK_BLITTER_C |
+		                          MW_MASK_BLITTER_D_N | MW_MASK_BLITTER_D_L | MW_MASK_BLITTER_D_F;
+		if(s == "bpl")     return MW_MASK_BPL_0 | MW_MASK_BPL_1 | MW_MASK_BPL_2 | MW_MASK_BPL_3 |
+		                          MW_MASK_BPL_4 | MW_MASK_BPL_5 | MW_MASK_BPL_6 | MW_MASK_BPL_7;
+		if(s == "spr")     return MW_MASK_SPR_0 | MW_MASK_SPR_1 | MW_MASK_SPR_2 | MW_MASK_SPR_3 |
+		                          MW_MASK_SPR_4 | MW_MASK_SPR_5 | MW_MASK_SPR_6 | MW_MASK_SPR_7;
+		if(s == "audio")   return MW_MASK_AUDIO_0 | MW_MASK_AUDIO_1 | MW_MASK_AUDIO_2 | MW_MASK_AUDIO_3;
+		if(s.length() == 4 && s.compare(0, 3, "bpl") == 0 && s[3] >= '0' && s[3] <= '7')
+			return MW_MASK_BPL_0 << (s[3] - '0');
+		if(s.length() == 4 && s.compare(0, 3, "spr") == 0 && s[3] >= '0' && s[3] <= '7')
+			return MW_MASK_SPR_0 << (s[3] - '0');
+		if(s.length() == 6 && s.compare(0, 5, "audio") == 0 && s[5] >= '0' && s[5] <= '3')
+			return MW_MASK_AUDIO_0 << (s[5] - '0');
+		if(s == "dma")     return MW_MASK_ALL & ~(MW_MASK_CPU_I | MW_MASK_CPU_D_R | MW_MASK_CPU_D_W);
+		return MW_MASK_ALL;
+	}
+
+	// claim a free (or matching) memwatch slot; returns its index or -1
+	static int mon_watch_set(uaecptr addr, int bytes, int rwi, uae_u32 amask,
+			int val_enabled, uae_u32 val, uae_u32 vmask, int mustchange,
+			int frozen, uae_u32 modval, int modval_written,
+			uae_u32 reg, uaecptr pc, bool nobreak, bool reportonly) {
+		for(int i = 0; i < MEMWATCH_TOTAL; i++) {
+			memwatch_node& m = mwnodes[i];
+			if(m.size && !(m.addr == addr && m.size == bytes))
+				continue;
+			memset(&m, 0, sizeof(memwatch_node));
+			m.addr = addr;
+			m.size = bytes;
+			m.rwi = rwi;
+			m.access_mask = amask;
+			m.val_enabled = val_enabled;
+			m.val = val;
+			m.val_mask = vmask;
+			m.val_size = bytes;
+			m.mustchange = mustchange;
+			m.frozen = frozen;
+			m.modval = modval;
+			m.modval_written = modval_written;
+			m.reg = reg;
+			m.pc = pc;
+			m.nobreak = nobreak;
+			m.reportonly = reportonly;
+			m.bus_error = 0;
+			memwatch_setup();
+			return i;
+		}
+		return -1;
+	}
+
 /*	#pragma comment(lib, "Bcrypt.lib")
 	#ifndef NT_SUCCESS
 		#define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
@@ -229,8 +332,10 @@ namespace barto_gdbserver {
 			fd.fd_count = 1;
 			if(select(1, &fd, nullptr, nullptr, &tv)) {
 				gdbconn = accept(gdbsocket, (struct sockaddr*)socketaddr, &sa_len);
-				if(gdbconn != INVALID_SOCKET)
+				if(gdbconn != INVALID_SOCKET) {
+					useAck = true; // per-connection: a previous client may have sent QStartNoAckMode
 					barto_log("GDBSERVER: connection accepted\n");
+				}
 			}
 		}
 		return gdbconn != INVALID_SOCKET;
@@ -729,6 +834,329 @@ namespace barto_gdbserver {
 										}
 										response += to_hex(output);
 									}
+
+								} else if(cmd == "status") {
+									int bpcount = 0, wpcount = 0;
+									for(auto& b : bpnodes)
+										if(b.enabled)
+											bpcount++;
+									for(auto& m : mwnodes)
+										if(m.size)
+											wpcount++;
+									const char* sname = "inited";
+									switch(debugger_state) {
+									case state::connected: sname = "running"; break;
+									case state::debugging: sname = "debugging"; break;
+									case state::profile: sname = "profile"; break;
+									case state::profiling: sname = "profiling"; break;
+									default: break;
+									}
+									char sb[768];
+									snprintf(sb, sizeof(sb),
+										"state=%s\nrunning=%d\ncycles=%llu\nframe=%u\nvpos=%d\nhpos=%d\n"
+										"warp=%d\nbaseText=%08x\nsizeText=%08x\nsections=%u\n"
+										"breakpoints=%d\nwatchpoints=%d\nmemwatch=%d\ntrace=%d\n"
+										"pc=%08x\nsr=%04x\n",
+										sname,
+										debugger_state == state::debugging ? 0 : 1,
+										(unsigned long long)(get_cycles() / cpucycleunit),
+										(unsigned)timeframes, vpos, (int)current_hpos(),
+										currprefs.turbo_emulation ? 1 : 0,
+										(unsigned)baseText, (unsigned)sizeText, (unsigned)sections.size(),
+										bpcount, wpcount, memwatch_enabled, mon_trace_enabled ? 1 : 0,
+										(unsigned)M68K_GETPC, (unsigned)regs.sr);
+									response += to_hex(std::string(sb));
+								} else if(cmd == "warp" || cmd.compare(0, 5, "warp ") == 0) {
+									std::string a = mon_trim(cmd.substr(strlen("warp")));
+									if(a == "on" || a == "1")
+										warpmode(1);
+									else if(a == "off" || a == "0")
+										warpmode(0);
+									else if(a == "toggle")
+										warpmode(-1);
+									// plain text on purpose: the client matches on the "warp=" prefix
+									response += currprefs.turbo_emulation ? "warp=1" : "warp=0";
+								} else if(cmd == "memcfg") {
+									std::string out;
+									std::vector<addrbank*> seen;
+									for(int i = 0; i < MEMORY_BANKS; i++) {
+										addrbank* ab = mem_banks[i];
+										if(!ab)
+											continue;
+										bool dup = false;
+										for(size_t k = 0; k < seen.size(); k++)
+											if(seen[k] == ab) { dup = true; break; }
+										if(dup)
+											continue;
+										seen.push_back(ab);
+										// the client's parser wants a bare alphanumeric bank name
+										char nm[64];
+										int n = 0;
+										if(ab->name) {
+											char* un = ua(ab->name);
+											for(const char* p = un; *p && n < (int)sizeof(nm) - 1; p++) {
+												if((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9'))
+													nm[n++] = *p;
+											}
+											xfree(un);
+										}
+										if(!n)
+											nm[n++] = 'x';
+										nm[n] = 0;
+										char lb[192];
+										snprintf(lb, sizeof(lb),
+											"%s: start=%08x size=%08x reserved=%08x flags=%08x base=%08x\n",
+											nm, (unsigned)ab->start, (unsigned)ab->allocated_size,
+											(unsigned)ab->reserved_size, (unsigned)ab->flags,
+											(unsigned)(uintptr_t)ab->baseaddr);
+										out += lb;
+									}
+									response += to_hex(out);
+								} else if(cmd == "watch" || cmd.compare(0, 6, "watch ") == 0) {
+									std::string a = mon_trim(cmd.substr(strlen("watch")));
+									if(a == "list") {
+										std::string out;
+										int n = 0;
+										for(int i = 0; i < MEMWATCH_TOTAL; i++) {
+											if(!mwnodes[i].size)
+												continue;
+											TCHAR wb[256];
+											wb[0] = 0;
+											memwatch_dump2(wb, 256, i);
+											char* u = ua(wb);
+											char lb[320];
+											snprintf(lb, sizeof(lb), "%s\n", u);
+											xfree(u);
+											out += lb;
+											n++;
+										}
+										if(!n)
+											out = "no watchpoints\n";
+										response += to_hex(out);
+									} else if(a == "clear") {
+										for(int i = 0; i < MEMWATCH_TOTAL; i++)
+											memset(&mwnodes[i], 0, sizeof(memwatch_node));
+										memwatch_setup();
+										response += to_hex(std::string("all watchpoints cleared\n"));
+									} else if(a.compare(0, 4, "del ") == 0) {
+										int idx = atoi(a.c_str() + 4);
+										char lb[96];
+										if(idx >= 0 && idx < MEMWATCH_TOTAL) {
+											memset(&mwnodes[idx], 0, sizeof(memwatch_node));
+											memwatch_setup();
+											snprintf(lb, sizeof(lb), "watchpoint %d removed\n", idx);
+										} else
+											snprintf(lb, sizeof(lb), "bad watchpoint index %d\n", idx);
+										response += to_hex(std::string(lb));
+									} else if(a == "last") {
+										char lb[256];
+										if(memwatch_triggered)
+											snprintf(lb, sizeof(lb),
+												"addr=%08x size=%d rwi=%d val=%08x pc=%08x access_mask=%08x\n",
+												(unsigned)mwhit.addr, mwhit.size, mwhit.rwi,
+												(unsigned)mwhit.val, (unsigned)mwhit.pc, (unsigned)mwhit.access_mask);
+										else
+											snprintf(lb, sizeof(lb), "no watchpoint has triggered\n");
+										response += to_hex(std::string(lb));
+									} else if(!a.empty()) {
+										std::vector<std::string> tok = mon_split(a);
+										uaecptr addr = mon_num(tok[0]);
+										int rwi = 1 | 2, bits = 32, val_enabled = 0, mustchange = 0;
+										uae_u32 amask = MW_MASK_ALL, vmask = 0xffffffff, val = 0, reg = 0xffffffff;
+										uaecptr pc = 0xffffffff;
+										bool nobreak = false;
+										for(size_t i = 1; i < tok.size(); i++) {
+											const std::string& o = tok[i];
+											if(o == "r") rwi = 1;
+											else if(o == "w") rwi = 2;
+											else if(o == "rw") rwi = 1 | 2;
+											else if(o == "diff") mustchange = 1;
+											else if(o == "nobreak") nobreak = true;
+											else if(o.compare(0, 5, "size=") == 0) bits = atoi(o.c_str() + 5);
+											else if(o.compare(0, 5, "mask=") == 0) vmask = mon_num(o.substr(5));
+											else if(o.compare(0, 4, "val=") == 0) { val = mon_num(o.substr(4)); val_enabled = 1; }
+											else if(o.compare(0, 4, "src=") == 0) amask = mon_source_mask(o.substr(4));
+											else if(o.compare(0, 4, "reg=") == 0) reg = mon_num(o.substr(4));
+											else if(o.compare(0, 3, "pc=") == 0) pc = mon_num(o.substr(3));
+										}
+										int bytes = bits / 8;
+										if(bytes < 1) bytes = 1;
+										if(bytes > 4) bytes = 4;
+										int idx = mon_watch_set(addr, bytes, rwi, amask, val_enabled, val, vmask,
+											mustchange, 0, 0, 0, reg, pc, nobreak, nobreak);
+										char lb[192];
+										if(idx >= 0)
+											snprintf(lb, sizeof(lb), "watchpoint %d set at %08x size=%d rwi=%d src=%08x\n",
+												idx, (unsigned)addr, bytes, rwi, (unsigned)amask);
+										else
+											snprintf(lb, sizeof(lb), "no free watchpoint slot (max %d)\n", MEMWATCH_TOTAL);
+										response += to_hex(std::string(lb));
+									} else
+										response += to_hex(std::string("usage: watch <addr> [r|w|rw] [size=8|16|32] [val=] [mask=] [diff] [src=] [reg=] [pc=] [nobreak] | list | clear | del <i> | last\n"));
+								} else if(cmd == "protect" || cmd.compare(0, 8, "protect ") == 0) {
+									std::vector<std::string> tok = mon_split(mon_trim(cmd.substr(strlen("protect"))));
+									if(tok.empty() || tok[0] == "list") {
+										std::string out;
+										int n = 0;
+										for(int i = 0; i < MEMWATCH_TOTAL; i++) {
+											if(!mwnodes[i].size || (!mwnodes[i].frozen && !mwnodes[i].modval_written))
+												continue;
+											char lb[192];
+											snprintf(lb, sizeof(lb), "%d: addr=%08x size=%d %s val=%08x\n",
+												i, (unsigned)mwnodes[i].addr, mwnodes[i].size,
+												mwnodes[i].modval_written ? "set" : "block",
+												(unsigned)mwnodes[i].modval);
+											out += lb;
+											n++;
+										}
+										if(!n)
+											out = "no protects\n";
+										response += to_hex(out);
+									} else if(tok[0] == "clear") {
+										int n = 0;
+										for(int i = 0; i < MEMWATCH_TOTAL; i++) {
+											if(mwnodes[i].size && (mwnodes[i].frozen || mwnodes[i].modval_written)) {
+												memset(&mwnodes[i], 0, sizeof(memwatch_node));
+												n++;
+											}
+										}
+										memwatch_setup();
+										char lb[64];
+										snprintf(lb, sizeof(lb), "%d protect(s) cleared\n", n);
+										response += to_hex(std::string(lb));
+									} else {
+										bool isdel = (tok[0] == "del");
+										size_t ai = isdel ? 1 : 0;
+										if(ai >= tok.size()) {
+											response += to_hex(std::string("usage: protect <addr> block|set=<val> [size=] [src=] | del <addr> | list | clear\n"));
+										} else {
+											uaecptr addr = mon_num(tok[ai]);
+											int bits = 32, frozen = 0, modw = 0;
+											uae_u32 amask = MW_MASK_ALL, modval = 0;
+											for(size_t i = ai + 1; i < tok.size(); i++) {
+												const std::string& o = tok[i];
+												if(o == "block") frozen = 1;
+												else if(o.compare(0, 5, "size=") == 0) bits = atoi(o.c_str() + 5);
+												else if(o.compare(0, 4, "src=") == 0) amask = mon_source_mask(o.substr(4));
+												else if(o.compare(0, 4, "set=") == 0) { modval = mon_num(o.substr(4)); modw = 1; }
+											}
+											int bytes = bits / 8;
+											if(bytes < 1) bytes = 1;
+											if(bytes > 4) bytes = 4;
+											char lb[192];
+											if(isdel) {
+												int n = 0;
+												for(int i = 0; i < MEMWATCH_TOTAL; i++) {
+													if(mwnodes[i].size && mwnodes[i].addr == addr) {
+														memset(&mwnodes[i], 0, sizeof(memwatch_node));
+														n++;
+													}
+												}
+												memwatch_setup();
+												snprintf(lb, sizeof(lb), "%d protect(s) removed at %08x\n", n, (unsigned)addr);
+											} else {
+												if(!modw)
+													frozen = 1;
+												int idx = mon_watch_set(addr, bytes, 2, amask, 0, 0, 0xffffffff, 0,
+													frozen, modval, modw, 0xffffffff, 0xffffffff, true, false);
+												if(idx >= 0)
+													snprintf(lb, sizeof(lb), "protect %d at %08x size=%d %s\n",
+														idx, (unsigned)addr, bytes, modw ? "set" : "block");
+												else
+													snprintf(lb, sizeof(lb), "no free protect slot (max %d)\n", MEMWATCH_TOTAL);
+											}
+											response += to_hex(std::string(lb));
+										}
+									}
+								} else if(cmd == "trace" || cmd.compare(0, 6, "trace ") == 0) {
+									std::string a = mon_trim(cmd.substr(strlen("trace")));
+									if(a == "on")
+										mon_trace_enabled = true;
+									else if(a == "off")
+										mon_trace_enabled = false;
+									response += to_hex(std::string(mon_trace_enabled ? "trace=on\n" : "trace=off\n"));
+								} else if(cmd == "base" || cmd.compare(0, 5, "base ") == 0) {
+									std::vector<std::string> tok = mon_split(mon_trim(cmd.substr(strlen("base"))));
+									if(!tok.empty()) {
+										if(tok[0] == "clear") {
+											baseText = 0;
+											sizeText = 0;
+										} else if(tok.size() >= 2 && tok[0] == "text") {
+											baseText = (tok[1] == "clear") ? 0 : mon_num(tok[1]);
+										}
+									}
+									std::string out;
+									char lb[128];
+									snprintf(lb, sizeof(lb), "text=%08x\nsizeText=%08x\nsections=%u\n",
+										(unsigned)baseText, (unsigned)sizeText, (unsigned)sections.size());
+									out += lb;
+									for(size_t i = 0; i < sections.size(); i++) {
+										snprintf(lb, sizeof(lb), "section%u=%08x\n", (unsigned)i, (unsigned)sections[i]);
+										out += lb;
+									}
+									response += to_hex(out);
+								} else if(cmd.length() > 3 && cmd.compare(0, 2, "df") == 0 && cmd[2] >= '0' && cmd[2] <= '3') {
+									int dr = cmd[2] - '0';
+									std::string a = mon_trim(cmd.substr(3));
+									char lb[320];
+									if(a == "eject") {
+										disk_eject(dr);
+										snprintf(lb, sizeof(lb), "DF%d: ejected\n", dr);
+									} else if(a.compare(0, 6, "insert") == 0) {
+										std::vector<std::string> tok = mon_split(mon_trim(a.substr(strlen("insert"))));
+										if(tok.empty())
+											snprintf(lb, sizeof(lb), "usage: df<n> insert \"<path>\"\n");
+										else {
+											TCHAR* wp = au(tok[0].c_str());
+											disk_insert(dr, wp);
+											xfree(wp);
+											snprintf(lb, sizeof(lb), "DF%d: inserted %s\n", dr, tok[0].c_str());
+										}
+									} else
+										snprintf(lb, sizeof(lb), "usage: df<n> insert \"<path>\" | df<n> eject\n");
+									response += to_hex(std::string(lb));
+								} else if(cmd.compare(0, 6, "input ") == 0) {
+									std::vector<std::string> tok = mon_split(mon_trim(cmd.substr(strlen("input"))));
+									char lb[160];
+									if(tok.size() >= 3 && tok[0] == "key") {
+										int sc = (int)strtol(tok[1].c_str(), nullptr, 0);
+										int st = atoi(tok[2].c_str());
+										inputdevice_do_keyboard(sc, st);
+										snprintf(lb, sizeof(lb), "key %02x %d\n", sc, st);
+									} else if(tok.size() >= 3 && tok[0] == "event") {
+										inputdevice_add_inputcode(atoi(tok[1].c_str()), atoi(tok[2].c_str()), nullptr);
+										snprintf(lb, sizeof(lb), "event %s %s\n", tok[1].c_str(), tok[2].c_str());
+									} else if(tok.size() >= 4 && tok[0] == "mouse" && tok[1] == "move") {
+										setmousestate(0, 0, atoi(tok[2].c_str()), 0);
+										setmousestate(0, 1, atoi(tok[3].c_str()), 0);
+										snprintf(lb, sizeof(lb), "mouse move %s %s\n", tok[2].c_str(), tok[3].c_str());
+									} else if(tok.size() >= 4 && tok[0] == "mouse" && tok[1] == "abs") {
+										setmousestate(0, 0, atoi(tok[2].c_str()), 1);
+										setmousestate(0, 1, atoi(tok[3].c_str()), 1);
+										snprintf(lb, sizeof(lb), "mouse abs %s %s\n", tok[2].c_str(), tok[3].c_str());
+									} else if(tok.size() >= 4 && tok[0] == "mouse" && tok[1] == "button") {
+										setmousebuttonstate(0, atoi(tok[2].c_str()), atoi(tok[3].c_str()));
+										snprintf(lb, sizeof(lb), "mouse button %s %s\n", tok[2].c_str(), tok[3].c_str());
+									} else if(tok.size() >= 4 && tok[0] == "joy") {
+										int port = atoi(tok[1].c_str());
+										const std::string& act = tok[2];
+										int st = atoi(tok[3].c_str());
+										if(act == "fire" || act == "fire0" || act == "button0")
+											setjoybuttonstate(port, 0, st);
+										else if(act == "fire1" || act == "button1")
+											setjoybuttonstate(port, 1, st);
+										else if(act == "up")
+											setjoystickstate(port, 1, st ? -1 : 0, 1);
+										else if(act == "down")
+											setjoystickstate(port, 1, st ? 1 : 0, 1);
+										else if(act == "left")
+											setjoystickstate(port, 0, st ? -1 : 0, 1);
+										else if(act == "right")
+											setjoystickstate(port, 0, st ? 1 : 0, 1);
+										snprintf(lb, sizeof(lb), "joy %d %s %d\n", port, act.c_str(), st);
+									} else
+										snprintf(lb, sizeof(lb), "usage: input key <sc> <st> | event <id> <st> | joy <port> <act> <st> | mouse move|abs|button a b\n");
+									response += to_hex(std::string(lb));
 								} else if(cmd == "reset" && currprefs.debugging_trigger[0]) {
 										savestate_quick(0, 0); // restore state saved at process entry
 										barto_debug_resources_count = 0;
@@ -1083,8 +1511,17 @@ namespace barto_gdbserver {
 			}
 		}
 		if(!is_connected()) {
-			debugger_state = state::inited;
-			close();
+			// A client going away must NOT tear down the listening socket.
+			// close() also calls WSACleanup(), which permanently killed the
+			// server and forced a full emulator restart for every GDB session.
+			// Stay in 'connected': the vsync_pre pump only runs in that state,
+			// and it is what accepts the next client. Going back to 'inited'
+			// would instead re-arm the startup block, which halts the CPU and
+			// waits - so a reconnect would freeze the machine.
+			if(debugger_state != state::connected) {
+				debugger_state = state::connected;
+				barto_log(_T("GDBSERVER: client gone; still listening for a new one\n"));
+			}
 			deactivate_debugger();
 		}
 	}
