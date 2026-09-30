@@ -213,6 +213,86 @@ namespace barto_gdbserver {
 		return MW_MASK_ALL;
 	}
 
+	// 'monitor watch last' used to read memwatch_triggered and mwhit directly
+	// and always came back empty: WinUAE clears memwatch_triggered on entry to
+	// the debugger, and the stop-packet path below zeroes mwhit so the same hit
+	// is not reported twice.  By the time a monitor command can run, both are
+	// gone.  Latch a copy the moment a hit is visible instead -- once per frame
+	// from vsync_pre, which also catches 'nobreak' watches that never stop the
+	// CPU, and again in debug() just before mwhit is cleared.
+	static struct memwatch_node mw_last{};
+	static bool mw_last_valid = false;
+
+	// Arm a PC breakpoint in a free bpnode.  Every field matters, not just the
+	// three the address needs:
+	//
+	//   chain  bpnodes lives in .bss, so a fresh node has chain == 0.  The scan
+	//          in debug.cpp@debug() skips breakpoint i when ANY enabled node
+	//          has chain == i, and node 0 with chain == 0 points at itself --
+	//          so the first breakpoint ever set was silently never reported,
+	//          while every later one worked.  -1 means "not chained".
+	//   mask   only read for register breakpoints, but leave it sane.
+	//   cnt    <= 0 means "fire every time"; a stale count would swallow hits.
+	//
+	// Returns false when every slot is taken.
+	static bool mon_bp_set(uaecptr adr) {
+		for(auto& bpn : bpnodes) {
+			if(bpn.enabled)
+				continue;
+			memset(&bpn, 0, sizeof(breakpoint_node));
+			bpn.value1 = adr;
+			bpn.mask = 0xffffffff;
+			bpn.type = BREAKPOINT_REG_PC;
+			bpn.oper = BREAKPOINT_CMP_EQUAL;
+			bpn.chain = -1;
+			bpn.cnt = 0;
+			bpn.enabled = 1;
+			return true;
+		}
+		return false;
+	}
+
+	// Put the CPU on the instruction-checking path, or take it off again.
+	//
+	// This server halts the target by spinning in vsync_pre/handle_packet, not
+	// by entering WinUAE's own debugger -- activate_debugger() bails out at the
+	// is_interactive_console() test with the console suppressed, so `debugging`
+	// stays 0 and debug.cpp's debug() is never called.  That matters because
+	// the tail of debug() is the only thing that normally re-arms
+	// TRACE_CHECKONLY while breakpoints exist.  Without it do_specialties()
+	// never calls debug(), the bpnodes scan never runs, and a Z0 breakpoint is
+	// accepted, listed by `monitor status`, and then silently never hit.
+	// Watchpoints were unaffected because memwatch sits in the memory access
+	// path and does not care about `debugging`.
+	//
+	// Arm on resume when any PC breakpoint is live; disarm when the last one
+	// goes, since checking every instruction is not free.
+	static void mon_arm_trace() {
+		bool any = false;
+		for(const auto& bpn : bpnodes) {
+			if(bpn.enabled > 0) {
+				any = true;
+				break;
+			}
+		}
+		if(any) {
+			if(!trace_mode)
+				trace_mode = TRACE_CHECKONLY;
+			debugging = -1;
+			set_special(SPCFLAG_BRK);
+		} else if(trace_mode == TRACE_CHECKONLY) {
+			trace_mode = 0;
+			debugging = 0;
+		}
+	}
+
+	static void mw_latch() {
+		if(mwhit.size) {
+			mw_last = mwhit;
+			mw_last_valid = true;
+		}
+	}
+
 	// claim a free (or matching) memwatch slot; returns its index or -1
 	static int mon_watch_set(uaecptr addr, int bytes, int rwi, uae_u32 amask,
 			int val_enabled, uae_u32 val, uae_u32 vmask, int mustchange,
@@ -950,14 +1030,19 @@ namespace barto_gdbserver {
 										response += to_hex(std::string(lb));
 									} else if(a == "last") {
 										char lb[256];
-										if(memwatch_triggered)
+										mw_latch();
+										if(mw_last_valid)
 											snprintf(lb, sizeof(lb),
 												"addr=%08x size=%d rwi=%d val=%08x pc=%08x access_mask=%08x\n",
-												(unsigned)mwhit.addr, mwhit.size, mwhit.rwi,
-												(unsigned)mwhit.val, (unsigned)mwhit.pc, (unsigned)mwhit.access_mask);
+												(unsigned)mw_last.addr, mw_last.size, mw_last.rwi,
+												(unsigned)mw_last.val, (unsigned)mw_last.pc,
+												(unsigned)mw_last.access_mask);
 										else
 											snprintf(lb, sizeof(lb), "no watchpoint has triggered\n");
 										response += to_hex(std::string(lb));
+									} else if(a == "forget") {
+										mw_last_valid = false;
+										response += to_hex(std::string("last hit cleared\n"));
 									} else if(!a.empty()) {
 										std::vector<std::string> tok = mon_split(a);
 										uaecptr addr = mon_num(tok[0]);
@@ -1214,6 +1299,7 @@ namespace barto_gdbserver {
 										} else if(action == "c") { // continue
 											debugger_state = state::connected;
 											deactivate_debugger();
+											mon_arm_trace();
 											// none work...
 											//SetWindowPos(AMonitors[0].hAmigaWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE); // bring window to top
 											//BringWindowToTop(AMonitors[0].hAmigaWnd);
@@ -1270,20 +1356,13 @@ namespace barto_gdbserver {
 											trace_param[0] = 0;
 											trace_param[1] = 0xF80000;
 											response += "OK";
+										} else if(mon_bp_set(adr)) {
+											mon_arm_trace();
+											print_breakpoints();
+											response += "OK";
 										} else {
-											for(auto& bpn : bpnodes) {
-												if(bpn.enabled)
-													continue;
-												bpn.value1 = adr;
-												bpn.type = BREAKPOINT_REG_PC;
-												bpn.oper = BREAKPOINT_CMP_EQUAL;
-												bpn.enabled = 1;
-												trace_mode = 0;
-												print_breakpoints();
-												response += "OK";
-												break;
-											}
-											// TODO: error when too many breakpoints!
+											barto_log("GDBSERVER: no free breakpoint slot for 0x%x\n", adr);
+											response += "E01";
 										}
 									} else
 										response += "E01";
@@ -1297,7 +1376,7 @@ namespace barto_gdbserver {
 											for(auto& bpn : bpnodes) {
 												if(bpn.enabled && bpn.value1 == adr) {
 													bpn.enabled = 0;
-													trace_mode = 0;
+													mon_arm_trace();
 													print_breakpoints();
 													response += "OK";
 													break;
@@ -1547,6 +1626,10 @@ namespace barto_gdbserver {
 	void vsync_pre() {
 		if(!(currprefs.debugging_features & (1 << 2))) // "gdbserver"
 			return;
+
+		// A 'nobreak' watch never enters the debugger, so this is the only
+		// place its hit is ever seen.
+		mw_latch();
 
 		static uae_u32 profile_start_cycles{};
 		static size_t profile_custom_regs_size{};
@@ -1846,53 +1929,21 @@ start_profile:
 				//KPutCharX
 				auto execbase = get_long_debug(4);
 				KPutCharX = execbase - 0x204;
-				for(auto& bpn : bpnodes) {
-					if(bpn.enabled)
-						continue;
-					bpn.value1 = KPutCharX;
-					bpn.type = BREAKPOINT_REG_PC;
-					bpn.oper = BREAKPOINT_CMP_EQUAL;
-					bpn.enabled = 1;
-					barto_log("GDBSERVER: Breakpoint for KPutCharX at 0x%x installed\n", bpn.value1);
-					break;
-				}
+				if(mon_bp_set(KPutCharX))
+					barto_log("GDBSERVER: Breakpoint for KPutCharX at 0x%x installed\n", KPutCharX);
 
 				// TRAP#7 breakpoint (GCC generates this opcode when it encounters undefined behavior)
 				Trap7 = get_long_debug(regs.vbr + 0x9c);
-				for(auto& bpn : bpnodes) {
-					if(bpn.enabled)
-						continue;
-					bpn.value1 = Trap7;
-					bpn.type = BREAKPOINT_REG_PC;
-					bpn.oper = BREAKPOINT_CMP_EQUAL;
-					bpn.enabled = 1;
-					barto_log("GDBSERVER: Breakpoint for TRAP#7 at 0x%x installed\n", bpn.value1);
-					break;
-				}
+				if(mon_bp_set(Trap7))
+					barto_log("GDBSERVER: Breakpoint for TRAP#7 at 0x%x installed\n", Trap7);
 
 				AddressError = get_long_debug(regs.vbr + 3 * 4);
-				for(auto& bpn : bpnodes) {
-					if(bpn.enabled)
-						continue;
-					bpn.value1 = AddressError;
-					bpn.type = BREAKPOINT_REG_PC;
-					bpn.oper = BREAKPOINT_CMP_EQUAL;
-					bpn.enabled = 1;
-					barto_log("GDBSERVER: Breakpoint for AddressError at 0x%x installed\n", bpn.value1);
-					break;
-				}
+				if(mon_bp_set(AddressError))
+					barto_log("GDBSERVER: Breakpoint for AddressError at 0x%x installed\n", AddressError);
 
 				IllegalError = get_long_debug(regs.vbr + 4 * 4);
-				for(auto& bpn : bpnodes) {
-					if(bpn.enabled)
-						continue;
-					bpn.value1 = IllegalError;
-					bpn.type = BREAKPOINT_REG_PC;
-					bpn.oper = BREAKPOINT_CMP_EQUAL;
-					bpn.enabled = 1;
-					barto_log("GDBSERVER: Breakpoint for IllegalError at 0x%x installed\n", bpn.value1);
-					break;
-				}
+				if(mon_bp_set(IllegalError))
+					barto_log("GDBSERVER: Breakpoint for IllegalError at 0x%x installed\n", IllegalError);
 
 				// watchpoint for NULL (GCC sees this as undefined behavior)
 				// disabled for now, always triggered in OpenScreen()
@@ -1982,7 +2033,9 @@ start_profile:
 							response += hex32(mwhit.addr);
 							response += ";";
 						}
-						// so we don't trigger again
+						// so we don't trigger again -- but keep a copy first,
+						// or 'monitor watch last' has nothing to report
+						mw_latch();
 						mwhit.size = 0;
 						mwhit.addr = 0;
 						goto send_response;
