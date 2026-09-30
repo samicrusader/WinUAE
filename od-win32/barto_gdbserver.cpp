@@ -964,6 +964,7 @@ namespace barto_gdbserver {
 										int rwi = 1 | 2, bits = 32, val_enabled = 0, mustchange = 0;
 										uae_u32 amask = MW_MASK_ALL, vmask = 0xffffffff, val = 0, reg = 0xffffffff;
 										uaecptr pc = 0xffffffff;
+										int rawlen = 0;
 										bool nobreak = false;
 										for(size_t i = 1; i < tok.size(); i++) {
 											const std::string& o = tok[i];
@@ -973,15 +974,18 @@ namespace barto_gdbserver {
 											else if(o == "diff") mustchange = 1;
 											else if(o == "nobreak") nobreak = true;
 											else if(o.compare(0, 5, "size=") == 0) bits = atoi(o.c_str() + 5);
+											// len=<bytes> watches a whole region. memwatch handles ranges
+											// natively; size= is in bits and cannot express more than 4.
+											else if(o.compare(0, 4, "len=") == 0) rawlen = (int)mon_num(o.substr(4));
 											else if(o.compare(0, 5, "mask=") == 0) vmask = mon_num(o.substr(5));
 											else if(o.compare(0, 4, "val=") == 0) { val = mon_num(o.substr(4)); val_enabled = 1; }
 											else if(o.compare(0, 4, "src=") == 0) amask = mon_source_mask(o.substr(4));
 											else if(o.compare(0, 4, "reg=") == 0) reg = mon_num(o.substr(4));
 											else if(o.compare(0, 3, "pc=") == 0) pc = mon_num(o.substr(3));
 										}
-										int bytes = bits / 8;
+										int bytes = rawlen > 0 ? rawlen : bits / 8;
 										if(bytes < 1) bytes = 1;
-										if(bytes > 4) bytes = 4;
+										if(rawlen <= 0 && bytes > 4) bytes = 4;
 										int idx = mon_watch_set(addr, bytes, rwi, amask, val_enabled, val, vmask,
 											mustchange, 0, 0, 0, reg, pc, nobreak, nobreak);
 										char lb[192];
@@ -1032,17 +1036,19 @@ namespace barto_gdbserver {
 										} else {
 											uaecptr addr = mon_num(tok[ai]);
 											int bits = 32, frozen = 0, modw = 0;
+											int rawlen = 0;
 											uae_u32 amask = MW_MASK_ALL, modval = 0;
 											for(size_t i = ai + 1; i < tok.size(); i++) {
 												const std::string& o = tok[i];
 												if(o == "block") frozen = 1;
 												else if(o.compare(0, 5, "size=") == 0) bits = atoi(o.c_str() + 5);
+												else if(o.compare(0, 4, "len=") == 0) rawlen = (int)mon_num(o.substr(4));
 												else if(o.compare(0, 4, "src=") == 0) amask = mon_source_mask(o.substr(4));
 												else if(o.compare(0, 4, "set=") == 0) { modval = mon_num(o.substr(4)); modw = 1; }
 											}
-											int bytes = bits / 8;
+											int bytes = rawlen > 0 ? rawlen : bits / 8;
 											if(bytes < 1) bytes = 1;
-											if(bytes > 4) bytes = 4;
+											if(rawlen <= 0 && bytes > 4) bytes = 4;
 											char lb[192];
 											if(isdel) {
 												int n = 0;
