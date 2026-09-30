@@ -731,7 +731,7 @@ bool resumepaused(int priority)
 	resumesoundpaused ();
 	if (pausemouseactive) {
 		pausemouseactive = 0;
-		setmouseactive(mon->monitor_id, isfullscreen() > 0 ? 1 : -1);
+		//setmouseactive(mon->monitor_id, isfullscreen() > 0 ? 1 : -1);
 	}
 	pause_emulation = 0;
 	setsystime ();
@@ -1234,7 +1234,7 @@ static void winuae_active(struct AmigaMonitor *mon, HWND hwnd, int minimized)
 	wait_keyrelease ();
 	inputdevice_acquire (TRUE);
 	if ((isfullscreen () > 0 || currprefs.win32_capture_always) && !gui_active)
-		setmouseactive(mon->monitor_id, 1);
+		//setmouseactive(mon->monitor_id, 1);
 #ifdef LOGITECHLCD
 	if (!minimized)
 		lcd_priority (1);
@@ -2813,7 +2813,7 @@ static LRESULT CALLBACK AmigaWindowProc(HWND hWnd, UINT message, WPARAM wParam, 
 				} else if (num == 4) { // FPS
 					if (pause_emulation) {
 						resumepaused(9);
-						setmouseactive(mon->monitor_id, 1);
+						//setmouseactive(mon->monitor_id, 1);
 					}
 				}
 				return TRUE;
