@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="FullRelease|ARM64">
@@ -147,14 +147,14 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
     <_ProjectFileVersion>10.0.30128.1</_ProjectFileVersion>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">d:\amiga\</OutDir>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">d:\amiga\</OutDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(WinUAEBuildRoot)\$(Platform)\</OutDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">$(WinUAEBuildRoot)\$(Platform)\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(Configuration)\</IntDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">$(Configuration)\</IntDir>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkIncremental>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">false</LinkIncremental>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">d:\amiga\</OutDir>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='Test|x64'">d:\amiga\</OutDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(WinUAEBuildRoot)\$(Platform)\</OutDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Test|x64'">$(WinUAEBuildRoot)\$(Platform)\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(Platform)\$(Configuration)\</IntDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(Platform)\$(Configuration)\</IntDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Test|x64'">$(Platform)\$(Configuration)\</IntDir>
@@ -167,11 +167,11 @@
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</GenerateManifest>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Test|x64'">true</GenerateManifest>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Test|ARM64'">true</GenerateManifest>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">d:\amiga\</OutDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">$(WinUAEBuildRoot)\$(Platform)\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">$(Configuration)\</IntDir>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">false</LinkIncremental>
     <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">true</GenerateManifest>
-    <OutDir Condition="'$(Configuration)|$(Platform)'=='FullRelease|x64'">d:\amiga\</OutDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='FullRelease|x64'">$(WinUAEBuildRoot)\$(Platform)\</OutDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='FullRelease|x64'">$(Platform)\$(Configuration)\</IntDir>
     <IntDir Condition="'$(Configuration)|$(Platform)'=='FullRelease|ARM64'">$(Platform)\$(Configuration)\</IntDir>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='FullRelease|x64'">false</LinkIncremental>
@@ -184,28 +184,28 @@
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">winuaearm64</TargetName>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Test|x64'">winuae64</TargetName>
     <TargetName Condition="'$(Configuration)|$(Platform)'=='Test|ARM64'">winuaearm64</TargetName>
-    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(MSBuildProgramFiles32)\Windows Kits\10\Include\10.0.18362.0\km;c:\dev\include;$(IncludePath)</IncludePath>
-    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">$(MSBuildProgramFiles32)\Windows Kits\10\Include\10.0.18362.0\km;c:\dev\include;$(IncludePath)</IncludePath>
-    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">C:\dev\lib\x86;$(LibraryPath)</LibraryPath>
-    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">C:\dev\lib\x86;$(LibraryPath)</LibraryPath>
-    <IncludePath Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">$(MSBuildProgramFiles32)\Windows Kits\10\Include\10.0.18362.0\km;c:\dev\include;$(IncludePath)</IncludePath>
+    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(WinUAE3rdParty)\lib\x86;$(LibraryPath)</LibraryPath>
+    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">$(WinUAE3rdParty)\lib\x86;$(LibraryPath)</LibraryPath>
+    <IncludePath Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
     <ReferencePath Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">$(VC_ReferencesPath_x86);</ReferencePath>
-    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">C:\dev\lib\x86;$(LibraryPath)</LibraryPath>
+    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">$(WinUAE3rdParty)\lib\x86;$(LibraryPath)</LibraryPath>
     <EmbedManifest Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</EmbedManifest>
     <EmbedManifest Condition="'$(Configuration)|$(Platform)'=='Test|Win32'">true</EmbedManifest>
     <EmbedManifest Condition="'$(Configuration)|$(Platform)'=='FullRelease|Win32'">true</EmbedManifest>
-    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(MSBuildProgramFiles32)\Windows Kits\10\Include\10.0.18362.0\km;c:\dev\include;$(IncludePath)</IncludePath>
-    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(MSBuildProgramFiles32)\Windows Kits\10\Include\10.0.18362.0\km;c:\dev\include;$(IncludePath)</IncludePath>
-    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Test|x64'">$(MSBuildProgramFiles32)\Windows Kits\10\Include\10.0.18362.0\km;c:\dev\include;$(IncludePath)</IncludePath>
-    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Test|ARM64'">$(MSBuildProgramFiles32)\Windows Kits\10\Include\10.0.18362.0\km;c:\dev\include;$(IncludePath)</IncludePath>
-    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\dev\lib\x64;$(LibraryPath)</LibraryPath>
-    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">C:\dev\lib\arm64;$(LibraryPath)</LibraryPath>
-    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Test|x64'">C:\dev\lib\x64;$(LibraryPath)</LibraryPath>
-    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Test|ARM64'">C:\dev\lib\arm64;$(LibraryPath)</LibraryPath>
-    <IncludePath Condition="'$(Configuration)|$(Platform)'=='FullRelease|x64'">$(MSBuildProgramFiles32)\Windows Kits\10\Include\10.0.18362.0\km;c:\dev\include;$(IncludePath)</IncludePath>
-    <IncludePath Condition="'$(Configuration)|$(Platform)'=='FullRelease|ARM64'">$(MSBuildProgramFiles32)\Windows Kits\10\Include\10.0.18362.0\km;c:\dev\include;$(IncludePath)</IncludePath>
-    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='FullRelease|x64'">C:\dev\lib\x64;$(LibraryPath)</LibraryPath>
-    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='FullRelease|ARM64'">C:\dev\lib\arm64;$(LibraryPath)</LibraryPath>
+    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Test|x64'">$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Test|ARM64'">$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(WinUAE3rdParty)\lib\x64;$(LibraryPath)</LibraryPath>
+    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">$(WinUAE3rdParty)\lib\arm64;$(LibraryPath)</LibraryPath>
+    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Test|x64'">$(WinUAE3rdParty)\lib\x64;$(LibraryPath)</LibraryPath>
+    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='Test|ARM64'">$(WinUAE3rdParty)\lib\arm64;$(LibraryPath)</LibraryPath>
+    <IncludePath Condition="'$(Configuration)|$(Platform)'=='FullRelease|x64'">$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <IncludePath Condition="'$(Configuration)|$(Platform)'=='FullRelease|ARM64'">$(WinUAE3rdParty)\include;$(IncludePath)</IncludePath>
+    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='FullRelease|x64'">$(WinUAE3rdParty)\lib\x64;$(LibraryPath)</LibraryPath>
+    <LibraryPath Condition="'$(Configuration)|$(Platform)'=='FullRelease|ARM64'">$(WinUAE3rdParty)\lib\arm64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Test|x64'">
     <IgnoreImportLibrary>
@@ -233,7 +233,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='FullRelease|ARM64'">
     <ExecutablePath>$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x64;$(ExecutablePath)</ExecutablePath>
-    <OutDir>d:\amiga\</OutDir>
+    <OutDir>$(WinUAEBuildRoot)\$(Platform)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ExecutablePath>$(MSBuildProgramFiles32)\Windows Kits\10\bin\10.0.17763.0\x64;$(ExecutablePath)</ExecutablePath>
@@ -547,7 +547,7 @@
       <ShowProgress>NotSet</ShowProgress>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>C:\dev\lib\arm64;%(AdditionalLibraryDirectories);$(SolutionDir)\..\lib\</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(WinUAE3rdParty)\lib\arm64;%(AdditionalLibraryDirectories);$(SolutionDir)\..\lib\</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>MSVCRT.lib;%(IgnoreSpecificDefaultLibraries);MSVCRT</IgnoreSpecificDefaultLibraries>
       <DelayLoadDLLs>ws2_32.dll;msacm32.dll;wtsapi32.dll;dsound.dll;Iphlpapi.dll;portaudio_arm64.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -699,7 +699,7 @@
       <ShowProgress>NotSet</ShowProgress>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>C:\dev\lib\arm64;%(AdditionalLibraryDirectories);$(SolutionDir)\..\lib\</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(WinUAE3rdParty)\lib\arm64;%(AdditionalLibraryDirectories);$(SolutionDir)\..\lib\</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries);MSVCRT</IgnoreSpecificDefaultLibraries>
       <DelayLoadDLLs>ws2_32.dll;msacm32.dll;wtsapi32.dll;dsound.dll;Iphlpapi.dll;portaudio_arm64.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -937,7 +937,7 @@
       <ShowProgress>NotSet</ShowProgress>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <AdditionalLibraryDirectories>C:\dev\lib\arm64;%(AdditionalLibraryDirectories);$(SolutionDir)\..\lib\</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(WinUAE3rdParty)\lib\arm64;%(AdditionalLibraryDirectories);$(SolutionDir)\..\lib\</AdditionalLibraryDirectories>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries);MSVCRT</IgnoreSpecificDefaultLibraries>
       <DelayLoadDLLs>ws2_32.dll;msacm32.dll;wtsapi32.dll;dsound.dll;Iphlpapi.dll;portaudio_arm64.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <GenerateDebugInformation>true</GenerateDebugInformation>
