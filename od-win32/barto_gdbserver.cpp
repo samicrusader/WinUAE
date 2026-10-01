@@ -377,6 +377,9 @@ namespace barto_gdbserver {
 	PADDRINFOW socketinfo;
 	SOCKET gdbsocket{ INVALID_SOCKET };
 	SOCKET gdbconn{ INVALID_SOCKET };
+	// Bytes that arrived in the same recv() as something we already handled
+	// (a client typically sends Ctrl+C and its next packet back to back).
+	std::string pending_rx;
 	char socketaddr[sizeof(SOCKADDR_INET)];
 	bool useAck{ true };
 	uint32_t baseText{};
@@ -422,6 +425,8 @@ namespace barto_gdbserver {
 	}
 
 	bool data_available() {
+		if(!pending_rx.empty() && gdbconn != INVALID_SOCKET)
+			return true;
 		if(is_connected()) {
 			struct timeval tv;
 			fd_set fd;
@@ -550,6 +555,7 @@ namespace barto_gdbserver {
 			return;
 		closesocket(gdbconn);
 		gdbconn = INVALID_SOCKET;
+		pending_rx.clear();
 		barto_log(_T("GDBSERVER: disconnect\n"));
 	}
 
@@ -644,11 +650,21 @@ namespace barto_gdbserver {
 		tracker _;
 		if(data_available()) {
 			char buf[65536];
-			auto result = recv(gdbconn, buf, sizeof(buf) - 1, 0);
+			int result;
+			std::string request, ack{}, response;
+			if(!pending_rx.empty()) {
+				request.swap(pending_rx);
+				result = (int)request.size();
+				barto_log("GDBSERVER: processing %d held-back bytes: >>%s<<\n", result, request.c_str());
+			} else {
+				result = recv(gdbconn, buf, sizeof(buf) - 1, 0);
+				if(result > 0) {
+					buf[result] = '\0';
+					barto_log("GDBSERVER: received %d bytes: >>%s<<\n", result, buf);
+					request.assign(buf, result);
+				}
+			}
 			if(result > 0) {
-				buf[result] = '\0';
-				barto_log("GDBSERVER: received %d bytes: >>%s<<\n", result, buf);
-				std::string request{ buf }, ack{}, response;
 				while(!request.empty() && (request[0] == '+' || request[0] == '-')) {
 					if(request[0] == '+') {
 						request = request.substr(1);
@@ -658,7 +674,12 @@ namespace barto_gdbserver {
 					}
 				}
 				if(!request.empty() && request[0] == 0x03) {
-					// Ctrl+C
+					// Ctrl+C. Anything after it in this read (GDB clients send
+					// their next packet straight away) used to be thrown away,
+					// so a connect that broke in and then asked qSupported never
+					// got an answer. Keep it for the next pump.
+					if(request.find('$', 1) != std::string::npos)
+						pending_rx = request.substr(request.find('$', 1));
 					ack = "+";
 					response = "$";
 					response += "S05"; // SIGTRAP
@@ -1897,6 +1918,11 @@ start_profile:
 		va_start(parms, format);
 		vsprintf(buffer, format, parms);
 		OutputDebugStringA(buffer);
+		// Also into WinUAE's own log: OutputDebugString alone made every
+		// GDBSERVER state change invisible without a debugger attached.
+		// The startup wait prints a '.' per 100 ms; keep that out.
+		if(strcmp(buffer, ".") && strcmp(buffer, "\n"))
+			write_log(_T("%S"), buffer);
 		output(buffer);
 		va_end(parms);
 	}
@@ -1907,6 +1933,7 @@ start_profile:
 		va_start(parms, format);
 		vswprintf(buffer, format, parms);
 		OutputDebugStringW(buffer);
+		write_log(_T("%s"), buffer);
 		output(string_to_utf8(buffer).c_str());
 		va_end(parms);
 	}
@@ -1915,6 +1942,12 @@ start_profile:
 	bool debug() {
 		if(!(currprefs.debugging_features & (1 << 2))) // "gdbserver"
 			return false;
+
+		static bool first_entry_logged = false;
+		if(!first_entry_logged) {
+			first_entry_logged = true;
+			barto_log("GDBSERVER: debug() first entry, state=%d\n", (int)debugger_state);
+		}
 
 		warpmode(0);
 		//cfgfile_modify(-1, _T("warp false"), 0, nullptr, 0);
