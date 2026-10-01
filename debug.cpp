@@ -136,7 +136,11 @@ void activate_debugger (void)
 {
 	disasm_init();
 
-	if (!is_interactive_console() || isfullscreen() > 0) {
+	// BARTO: the gdbserver talks over TCP and needs no console. When stdout is
+	// redirected to a file (as an MCP launcher does), is_interactive_console()
+	// is false and this used to return here, so debug() never ran: no startup
+	// halt, warp left on, and nothing ever accept()ed the GDB client.
+	if ((!is_interactive_console() && !(currprefs.debugging_features & (1 << 2))) || isfullscreen() > 0) {
 		return;
 	}
 
