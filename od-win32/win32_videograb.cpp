@@ -51,6 +51,7 @@ static bool videoInitialized;
 static int videoPaused;
 static long *frameBuffer;
 static long bufferSize;
+static long frameBufferBytes;
 static int videoWidth, videoHeight;
 static int audio_chflags, audio_volume;
 
@@ -76,6 +77,7 @@ void uninitvideograb(void)
 
 	delete[] frameBuffer;
 	frameBuffer = NULL;
+	frameBufferBytes = 0;
 }
 
 static void FindPin(IBaseFilter* baseFilter, PIN_DIRECTION direction, int pinNumber, IPin** destPin)
@@ -439,21 +441,50 @@ bool getvideograb(long **buffer, int *width, int *height)
 	if (!videoInitialized)
 		return false;
 
-	// Only need to do this once
-	if (!frameBuffer) {
-		// The Sample Grabber requires an arbitrary buffer
-		// That we only know at runtime.
-		// (width * height * 3) bytes will not work.
-		hr = sampleGrabber->GetCurrentBuffer(&bufferSize, NULL);
-		if (FAILED(hr)) {
-			write_log(_T("getvideograb get size %08x\n"), hr);
-			return false;
+	// The caller reads a whole RGB24 frame (rows padded to 4 bytes) out of
+	// the buffer, so never hand out one that holds less than that, and grow
+	// the buffer if the sample size grows. The old code sized the buffer once,
+	// from whatever the first query returned after the graph (re)started --
+	// which happens on every emulated reset -- and handed it out whatever
+	// the copy returned. An Amiga reboot crashed in do_genlock() reading
+	// past the end of a small heap block, which fits a short first sample.
+	long size = 0;
+	hr = sampleGrabber->GetCurrentBuffer(&size, NULL);
+	if (FAILED(hr)) {
+		return false;
+	}
+	long stride = (videoWidth * 3 + 3) & ~3;
+	long need = stride * (videoHeight < 0 ? -videoHeight : videoHeight);
+	if (size != need) {
+		// the decoder may have renegotiated the frame size since init
+		AM_MEDIA_TYPE mt;
+		if (SUCCEEDED(sampleGrabber->GetConnectedMediaType(&mt))) {
+			if (mt.formattype == FORMAT_VideoInfo && mt.pbFormat) {
+				VIDEOINFOHEADER *vih = (VIDEOINFOHEADER*)mt.pbFormat;
+				if (vih->bmiHeader.biWidth != videoWidth || vih->bmiHeader.biHeight != videoHeight) {
+					write_log(_T("getvideograb: frame size %dx%d -> %dx%d\n"),
+						videoWidth, videoHeight, vih->bmiHeader.biWidth, vih->bmiHeader.biHeight);
+					videoWidth = vih->bmiHeader.biWidth;
+					videoHeight = vih->bmiHeader.biHeight;
+				}
+			}
+			CoTaskMemFree(mt.pbFormat);
 		}
-		frameBuffer = new long[bufferSize];
+		stride = (videoWidth * 3 + 3) & ~3;
+		need = stride * (videoHeight < 0 ? -videoHeight : videoHeight);
+	}
+	if (size < need || need <= 0) {
+		return false;
+	}
+	if (!frameBuffer || size > frameBufferBytes) {
+		delete[] frameBuffer;
+		frameBuffer = new long[(size + 3) / 4];
+		frameBufferBytes = size;
 	}
 
+	bufferSize = frameBufferBytes;
 	hr = sampleGrabber->GetCurrentBuffer(&bufferSize, (long*)frameBuffer);
-	if (SUCCEEDED(hr)) {
+	if (SUCCEEDED(hr) && bufferSize >= need) {
 		*buffer = frameBuffer;
 		*width = videoWidth;
 		*height = videoHeight;
