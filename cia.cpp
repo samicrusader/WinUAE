@@ -24,6 +24,9 @@
 #endif
 #ifdef SERIAL_PORT
 #include "serial.h"
+#ifdef WITH_SPECIALMONITORS
+#include "specialmonitors.h"
+#endif
 #endif
 #include "disk.h"
 #include "keybuf.h"
@@ -2278,6 +2281,9 @@ static void WriteCIAB(uae_u16 addr, uae_u8 val, uae_u32 *flags)
 #ifdef SERIAL_PORT
 		serial_writestatus(c->pra, c->dra);
 #endif
+#ifdef WITH_SPECIALMONITORS
+		genlock_serial_control(c->pra, c->dra);
+#endif
 #ifdef PARALLEL_PORT
 		if (isprinter() < 0) {
 			parallel_direct_write_status(val, c->dra);
@@ -2309,6 +2315,9 @@ static void WriteCIAB(uae_u16 addr, uae_u8 val, uae_u32 *flags)
 #ifdef SERIAL_PORT
 		if (currprefs.use_serial)
 			serial_writestatus(c->pra, c->dra);
+#endif
+#ifdef WITH_SPECIALMONITORS
+		genlock_serial_control(c->pra, c->dra);
 #endif
 		break;
 	case 3:
@@ -2410,6 +2419,9 @@ void CIA_reset(int hardreset)
 #ifdef SERIAL_PORT
 	if (currprefs.use_serial && !savestate_state)
 		serial_dtr_off(); /* Drop DTR at reset */
+#endif
+#ifdef WITH_SPECIALMONITORS
+	genlock_serial_control(cia[1].pra, cia[1].dra);
 #endif
 	if (savestate_state) {
 		if (currprefs.cs_ciaoverlay) {
