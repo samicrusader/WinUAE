@@ -227,6 +227,7 @@ static const TCHAR *dongles[] =
 };
 static const TCHAR *cdmodes[] = { _T("disabled"), _T(""), _T("image"), _T("ioctl"), _T("spti"), _T("aspi"), 0 };
 static const TCHAR *cdconmodes[] = { _T(""), _T("uae"), _T("ide"), _T("scsi"), _T("cdtv"), _T("cd32"), 0 };
+static const TCHAR *genlockcontrol[] = { _T("none"), _T("serial"), NULL };
 static const TCHAR *genlockmodes[] = { _T("none"), _T("noise"), _T("testcard"), _T("image"), _T("video"), _T("stream"), _T("ld"), _T("sony_ld"), _T("pioneer_ld"), NULL };
 static const TCHAR *ppc_implementations[] = {
 	_T("auto"),
@@ -2614,6 +2615,7 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 
 	cfgfile_write_bool(f, _T("genlock"), p->genlock);
 	cfgfile_dwrite_bool(f, _T("genlock_alpha"), p->genlock_alpha);
+	cfgfile_dwrite_strarr(f, _T("genlock_control"), genlockcontrol, p->genlock_control);
 	cfgfile_dwrite_bool(f, _T("genlock_aspect"), p->genlock_aspect);
 	cfgfile_dwrite_strarr(f, _T("genlockmode"), genlockmodes, p->genlock_image);
 	cfgfile_dwrite_str(f, _T("genlock_image"), p->genlock_image_file);
@@ -6153,6 +6155,7 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_strval(option, value, _T("monitoremu"), &p->monitoremu, specialmonitorconfignames, 0)
 #endif
 		|| cfgfile_strval(option, value, _T("genlockmode"), &p->genlock_image, genlockmodes, 0)
+		|| cfgfile_strval(option, value, _T("genlock_control"), &p->genlock_control, genlockcontrol, 0)
 		|| cfgfile_strval(option, value, _T("waiting_blits"), &p->waiting_blits, waitblits, 0)
 		|| cfgfile_strval(option, value, _T("floppy_auto_extended_adf"), &p->floppy_auto_ext2, autoext2, 0)
 		|| cfgfile_strval(option, value,  _T("z3mapping"), &p->z3_mapping_mode, z3mapping, 0)
@@ -8796,6 +8799,7 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 	p->display_calibration = 0;
 	p->genlock = 0;
 	p->genlock_image = 0;
+	p->genlock_control = 0;
 	p->genlock_mix = 0;
 	p->genlock_offset_x = 0;
 	p->genlock_offset_y = 0;
@@ -9024,6 +9028,7 @@ static void buildin_default_prefs (struct uae_prefs *p)
 
 	p->genlock = 0;
 	p->genlock_image = 0;
+	p->genlock_control = 0;
 	p->genlock_image_file[0] = 0;
 	p->genlock_font[0] = 0;
 	

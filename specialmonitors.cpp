@@ -2264,6 +2264,57 @@ static bool a2024(struct vidbuffer *src, struct vidbuffer *dst)
 }
 
 static uae_u8 *genlock_image_data;
+
+/*
+ * Genlock mode select over the serial port control lines (genlock_control=serial).
+ *
+ * The Prevue Channel control unit's genlock takes its mode from the Amiga
+ * serial port's RTS (CIA-B PRA bit 6) and DTR (bit 7) outputs. Both lines are
+ * active low. EPG Esquire 9.0.4 drives them from three routines, which are also
+ * the three entries of its diagnostics "Video" menu:
+ *
+ *   RTS        DTR
+ *   negated    negated    Overlay Ext. Video   (sub_108DE: key colour 0 over video)
+ *   asserted   negated    Computer Only        (sub_108B6: Amiga picture only)
+ *   asserted   asserted   Ext. Video Only      (sub_10894: external video only)
+ *   negated    asserted   not used by ESQ; treated as Overlay
+ *
+ * A line whose CIA DDR bit is an input floats high through the port pull-up,
+ * so it reads as negated. After reset (DDR = 0) that gives Overlay, which is
+ * also what the genlock does when nothing drives it.
+ */
+enum { GENLOCK_CTRL_OVERLAY, GENLOCK_CTRL_COMPUTER, GENLOCK_CTRL_EXTERNAL };
+static const TCHAR *genlock_ctrl_names[] = { _T("Overlay Ext. Video"), _T("Computer Only"), _T("Ext. Video Only") };
+static int genlock_ctrl_mode = GENLOCK_CTRL_OVERLAY;
+static int genlock_ctrl_lines = -1;
+
+void genlock_serial_control(uae_u8 pra, uae_u8 dra)
+{
+	int lines = ((pra & dra) | (uae_u8)~dra) & 0xc0;
+	if (lines == genlock_ctrl_lines) {
+		return;
+	}
+	genlock_ctrl_lines = lines;
+	bool rts = !(lines & 0x40);
+	bool dtr = !(lines & 0x80);
+	int mode = GENLOCK_CTRL_OVERLAY;
+	if (rts && dtr) {
+		mode = GENLOCK_CTRL_EXTERNAL;
+	} else if (rts) {
+		mode = GENLOCK_CTRL_COMPUTER;
+	}
+	if (mode != genlock_ctrl_mode) {
+		genlock_ctrl_mode = mode;
+		if (currprefs.genlock_control) {
+			write_log(_T("GENLOCK: RTS=%d DTR=%d -> %s\n"), rts, dtr, genlock_ctrl_names[mode]);
+		}
+	}
+}
+
+static int genlock_effective_mode(void)
+{
+	return currprefs.genlock_control ? genlock_ctrl_mode : GENLOCK_CTRL_OVERLAY;
+}
 static bool genlock_video;
 static int genlock_image_width, genlock_image_height, genlock_image_pitch;
 static TCHAR genlock_video_file[MAX_DPATH], genlock_image_file[MAX_DPATH];
@@ -2433,6 +2484,7 @@ static bool do_genlock(struct vidbuffer *src, struct vidbuffer *dst, bool double
 	int y, x, vdbl, hdbl;
 	int ystart, yend, xstart, xend;
 	int mix1 = 0, mix2 = 0;
+	const int gmode = genlock_effective_mode();
 
 	int genlock_image_pixbytes = 4;
 	int genlock_image_red_index = 0;
@@ -2679,7 +2731,8 @@ skip:
 			uae_u8 *d2 = d + dst->rowbytes;
 			if (*s_genlock == 0xffff) {
 				PUT_PRGBA(d, d2, dst, 0, 0, 0, 0, 0, doublelines, false);
-			} else if ((!zclken && is_transparent(*s_genlock)) || (zclken && ztoggle)) {
+			} else if (gmode == GENLOCK_CTRL_EXTERNAL ||
+				(gmode == GENLOCK_CTRL_OVERLAY && ((!zclken && is_transparent(*s_genlock)) || (zclken && ztoggle)))) {
 				a = amix2;
 				if (genlock_error) {
 					r = 0x00;
@@ -2703,7 +2756,7 @@ skip:
 				} else {
 					r = g = b = get_noise();
 				}
-				if (mix2) {
+				if (mix2 && gmode == GENLOCK_CTRL_OVERLAY) {
 					r = (mix1 * r + mix2 * FVR(src, s)) / 256;
 					g = (mix1 * g + mix2 * FVG(src, s)) / 256;
 					b = (mix1 * b + mix2 * FVB(src, s)) / 256;

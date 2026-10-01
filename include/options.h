@@ -672,6 +672,7 @@ struct uae_prefs {
 	uae_u64 ecs_genlock_features_colorkey_mask[4];
 	uae_u8 ecs_genlock_features_plane_mask;
 	bool genlock_alpha;
+	int genlock_control;
 	TCHAR genlock_image_file[MAX_DPATH];
 	TCHAR genlock_video_file[MAX_DPATH];
 	TCHAR genlock_font[MAX_DPATH];
