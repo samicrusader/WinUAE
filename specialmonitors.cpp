@@ -2315,6 +2315,88 @@ static int genlock_effective_mode(void)
 {
 	return currprefs.genlock_control ? genlock_ctrl_mode : GENLOCK_CTRL_OVERLAY;
 }
+
+/*
+ * Genlock fader (genlock_control=serial).
+ *
+ * The same genlock takes two 6-bit levels as a serial bitstream on BPLCON0
+ * bit 8 (GAUD). EPG Esquire's sub_10922 builds it into its copper lists: on one
+ * line, 32 back-to-back MOVEs to BPLCON0, two per bit, GAUD idling high:
+ *
+ *   0 1 0 1  v5 v4 v3 v2 v1 v0  f5 f4 f3 f2 f1 f0     (MSB first)
+ *   sync     video level        graphics fade
+ *
+ * ESQ's settings: Overlay (63,0), Computer Only (0,0), Ext. Video Only
+ * (63,63), ^O n (63,63-n), "Negative Video" (0,63). So the first level is the
+ * external video gain and the second fades the Amiga picture out over the
+ * video (63 = gone). (Inferred from those five settings; the hardware itself
+ * is undocumented.) Until a valid frame has been seen the fader is neutral.
+ */
+#define GENLOCK_FADER_WRITES 32
+static uae_u8 genlock_fader_buf[GENLOCK_FADER_WRITES];
+static int genlock_fader_cnt = -1, genlock_fader_vpos;
+static bool genlock_fader_lastbit = true;
+static bool genlock_fader_valid;
+static int genlock_fader_video = 63, genlock_fader_fade = 0;
+
+static void genlock_fader_decode(void)
+{
+	int bits = 0;
+	for (int i = 0; i < GENLOCK_FADER_WRITES; i += 2) {
+		if (genlock_fader_buf[i] != genlock_fader_buf[i + 1]) {
+			return;
+		}
+		bits = (bits << 1) | genlock_fader_buf[i];
+	}
+	if ((bits >> 12) != 0x5) {
+		return;
+	}
+	int video = (bits >> 6) & 63;
+	int fade = bits & 63;
+	if (!genlock_fader_valid || video != genlock_fader_video || fade != genlock_fader_fade) {
+		if (currprefs.genlock_control) {
+			write_log(_T("GENLOCK: fader video=%d fade=%d\n"), video, fade);
+		}
+	}
+	genlock_fader_video = video;
+	genlock_fader_fade = fade;
+	genlock_fader_valid = true;
+}
+
+void genlock_fader_bplcon0(uae_u16 v, int vpos)
+{
+	bool bit = (v & 0x0100) != 0;
+	if (genlock_fader_cnt < 0) {
+		// a frame starts on the falling edge out of the idle-high state
+		if (genlock_fader_lastbit && !bit) {
+			genlock_fader_cnt = 0;
+			genlock_fader_vpos = vpos;
+		}
+	}
+	if (genlock_fader_cnt >= 0) {
+		if (vpos - genlock_fader_vpos > 1 || vpos < genlock_fader_vpos) {
+			genlock_fader_cnt = -1; // not a burst
+		} else {
+			genlock_fader_buf[genlock_fader_cnt++] = bit;
+			if (genlock_fader_cnt == GENLOCK_FADER_WRITES) {
+				genlock_fader_decode();
+				genlock_fader_cnt = -1;
+			}
+		}
+	}
+	genlock_fader_lastbit = bit;
+}
+
+// video gain and Amiga picture opacity, both 0..256
+static void genlock_fader_levels(int *vgain, int *opacity)
+{
+	*vgain = 256;
+	*opacity = 256;
+	if (currprefs.genlock_control && genlock_fader_valid) {
+		*vgain = genlock_fader_video * 256 / 63;
+		*opacity = (63 - genlock_fader_fade) * 256 / 63;
+	}
+}
 static bool genlock_video;
 static int genlock_image_width, genlock_image_height, genlock_image_pitch;
 static TCHAR genlock_video_file[MAX_DPATH], genlock_image_file[MAX_DPATH];
@@ -2485,6 +2567,10 @@ static bool do_genlock(struct vidbuffer *src, struct vidbuffer *dst, bool double
 	int ystart, yend, xstart, xend;
 	int mix1 = 0, mix2 = 0;
 	const int gmode = genlock_effective_mode();
+	int vgain, opacity;
+	genlock_fader_levels(&vgain, &opacity);
+	// in Computer Only the genlock passes the Amiga picture through untouched
+	const bool faded = gmode == GENLOCK_CTRL_OVERLAY && opacity < 256;
 
 	int genlock_image_pixbytes = 4;
 	int genlock_image_red_index = 0;
@@ -2731,8 +2817,9 @@ skip:
 			uae_u8 *d2 = d + dst->rowbytes;
 			if (*s_genlock == 0xffff) {
 				PUT_PRGBA(d, d2, dst, 0, 0, 0, 0, 0, doublelines, false);
-			} else if (gmode == GENLOCK_CTRL_EXTERNAL ||
+			} else if (gmode == GENLOCK_CTRL_EXTERNAL || faded ||
 				(gmode == GENLOCK_CTRL_OVERLAY && ((!zclken && is_transparent(*s_genlock)) || (zclken && ztoggle)))) {
+				bool keyed = gmode == GENLOCK_CTRL_EXTERNAL || (!zclken && is_transparent(*s_genlock)) || (zclken && ztoggle);
 				a = amix2;
 				if (genlock_error) {
 					r = 0x00;
@@ -2756,7 +2843,17 @@ skip:
 				} else {
 					r = g = b = get_noise();
 				}
-				if (mix2 && gmode == GENLOCK_CTRL_OVERLAY) {
+				if (vgain < 256) {
+					r = r * vgain / 256;
+					g = g * vgain / 256;
+					b = b * vgain / 256;
+				}
+				if (!keyed) {
+					// faded Amiga pixel over the video
+					r = (opacity * FVR(src, s) + (256 - opacity) * r) / 256;
+					g = (opacity * FVG(src, s) + (256 - opacity) * g) / 256;
+					b = (opacity * FVB(src, s) + (256 - opacity) * b) / 256;
+				} else if (mix2 && gmode == GENLOCK_CTRL_OVERLAY) {
 					r = (mix1 * r + mix2 * FVR(src, s)) / 256;
 					g = (mix1 * g + mix2 * FVG(src, s)) / 256;
 					b = (mix1 * b + mix2 * FVB(src, s)) / 256;

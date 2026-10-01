@@ -14,6 +14,7 @@ bool emulate_grayscale(struct vidbuffer*, struct vidbuffer*);
 bool specialmonitor_linebased(void);
 void genlock_infotext(uae_u8*, struct vidbuffer*);
 void genlock_serial_control(uae_u8 pra, uae_u8 dra);
+void genlock_fader_bplcon0(uae_u16 v, int vpos);
 
 void specialmonitor_store_fmode(int vpos, int hpos, uae_u16 fmode);
 void specialmonitor_gaudio(bool, int);

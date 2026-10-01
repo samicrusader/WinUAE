@@ -3622,6 +3622,10 @@ static void BPLCON0(uae_u16 v)
 	bplcon0_saved = v;
 	uae_u16 va = BPLCON0_Agnus_mask(v);
 
+#ifdef WITH_SPECIALMONITORS
+	// every write counts, including repeats: the genlock fader is a GAUD bitstream
+	genlock_fader_bplcon0(v, vpos);
+#endif
 #if SPRBORDER
 	v |= 1;
 #endif
