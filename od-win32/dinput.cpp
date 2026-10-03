@@ -411,13 +411,19 @@ static int doregister_rawinput(void)
 	if (!rawinput_available)
 		return 0;
 
+	// With the gdbserver attached, don't sink input while in the background and
+	// don't swallow Windows hotkeys: only deliver raw input while focused.
+	const bool dbgnocapture = (currprefs.debugging_features & (1 << 2)) != 0;
+	const DWORD sinkflag = dbgnocapture ? 0 : RIDEV_INPUTSINK;
+	const DWORD nohotkeysflag = dbgnocapture ? 0 : RIDEV_NOHOTKEYS;
+
 	memset (rid, 0, sizeof rid);
 	num = 0;
 	/* mouse */
 	rid[num].usUsagePage = 1;
 	rid[num].usUsage = 2;
 	if (mon->hMainWnd) {
-		rid[num].dwFlags = RIDEV_INPUTSINK;
+		rid[num].dwFlags = sinkflag;
 		rid[num].hwndTarget = mon->hMainWnd;
 	}
 	rid[num].dwFlags |= RIDEV_DEVNOTIFY;
@@ -428,10 +434,10 @@ static int doregister_rawinput(void)
 		rid[num].usUsagePage = 1;
 		rid[num].usUsage = 6;
 		if (mon->hMainWnd) {
-			rid[num].dwFlags = RIDEV_INPUTSINK;
+			rid[num].dwFlags = sinkflag;
 			rid[num].hwndTarget = mon->hMainWnd;
 		}
-		rid[num].dwFlags |= RIDEV_NOHOTKEYS | RIDEV_DEVNOTIFY;
+		rid[num].dwFlags |= nohotkeysflag | RIDEV_DEVNOTIFY;
 		num++;
 
 		/* joystick */
@@ -441,7 +447,7 @@ static int doregister_rawinput(void)
 		rid[num].usUsagePage = 1;
 		rid[num].usUsage = 4;
 		if (mon->hMainWnd) {
-			rid[num].dwFlags = RIDEV_INPUTSINK;
+			rid[num].dwFlags = sinkflag;
 			rid[num].hwndTarget = mon->hMainWnd;
 		}
 		rid[num].dwFlags |= RIDEV_DEVNOTIFY;
@@ -451,7 +457,7 @@ static int doregister_rawinput(void)
 		rid[num].usUsagePage = 1;
 		rid[num].usUsage = 5;
 		if (mon->hMainWnd) {
-			rid[num].dwFlags = RIDEV_INPUTSINK;
+			rid[num].dwFlags = sinkflag;
 			rid[num].hwndTarget = mon->hMainWnd;
 		}
 		rid[num].dwFlags |= RIDEV_DEVNOTIFY;
