@@ -596,7 +596,12 @@ oops:
 
 /*static*/ int screenshot_prepare(int monid, struct vidbuffer *vb) // Barto
 {
-	return screenshot_prepare(monid, 1, vb, false);
+	// standard=true: capture the buffer 1:1. Passing false here instead pulled in
+	// the interactive screenshot preferences
+	// (screenshot_xmult/ymult, screenshot_output_width/height, the clip mode), so
+	// a gdbserver screenshot came back arbitrarily upscaled and clipped depending
+	// on settings that have nothing to do with the debugger.
+	return screenshot_prepare(monid, 1, vb, true);
 }
 int screenshot_prepare(int monid, int imagemode)
 {

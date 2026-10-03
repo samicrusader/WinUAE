@@ -849,6 +849,23 @@ namespace barto_gdbserver {
 									// trim leading whitespace
 									while(!s.empty() && s[0] == ' ')
 										s = s.substr(1);
+									// optional leading keywords, in any order:
+									//   alpha  keep the genlock key as a PNG alpha channel
+									//   raw    skip the aspect correction below and emit the buffer as-is
+									bool want_alpha = false, want_raw = false;
+									for(;;) {
+										if(s.compare(0, 6, "alpha ") == 0) {
+											want_alpha = true;
+											s = s.substr(6);
+										} else if(s.compare(0, 4, "raw ") == 0) {
+											want_raw = true;
+											s = s.substr(4);
+										} else {
+											break;
+										}
+										while(!s.empty() && s[0] == ' ')
+											s = s.substr(1);
+									}
 									if(s.empty()) {
 										barto_log("GDBSERVER: screenshot: no path specified\n");
 										response += "E01";
@@ -864,29 +881,70 @@ namespace barto_gdbserver {
 										vsync_display_render();
 										int monid = getfocusedmonitor();
 										vidbuf_description* avidinfo = &adisplays[monid].gfxvidinfo;
-										vidbuffer* vb = &avidinfo->drawbuffer;
+										// The genlock / special-monitor composite lands in the buffer that is
+										// actually displayed: drawbuffer on a single monitor, but not when
+										// monitoremu_mon is set. Fall back while outbuffer is still unset.
+										vidbuffer* vb = avidinfo->outbuffer ? avidinfo->outbuffer : &avidinfo->drawbuffer;
 										if(screenshot_prepare(monid, vb) == 1) {
 											auto sbi = screenshot_get_bi();
 											auto sbi_bits = (const uint8_t*)screenshot_get_bits();
-											if(sbi && sbi_bits && sbi->bmiHeader.biBitCount == 24) {
+											if(sbi && sbi_bits && (sbi->bmiHeader.biBitCount == 24 || sbi->bmiHeader.biBitCount == 32)) {
 												const auto w = sbi->bmiHeader.biWidth;
 												const auto h = sbi->bmiHeader.biHeight;
 												const auto pitch = sbi->bmiHeader.biSizeImage / sbi->bmiHeader.biHeight;
-												// flip vertically and swap BGR -> RGB
-												auto bits = std::make_unique<uint8_t[]>(w * 3 * h);
-												for(int y = 0; y < h; y++) {
-													for(int x = 0; x < w; x++) {
-														bits[y * w * 3 + x * 3 + 0] = sbi_bits[(h - 1 - y) * pitch + x * 3 + 2];
-														bits[y * w * 3 + x * 3 + 1] = sbi_bits[(h - 1 - y) * pitch + x * 3 + 1];
-														bits[y * w * 3 + x * 3 + 2] = sbi_bits[(h - 1 - y) * pitch + x * 3 + 0];
+												// screenshot.cpp emits 32bpp BGRA whenever usealpha() holds -- genlock
+												// on, with genlock_image and genlock_alpha -- and 24bpp BGR otherwise.
+												// The alpha is the genlock key mask, so it is dropped unless asked for.
+												const int sbpp = sbi->bmiHeader.biBitCount / 8;
+												const int dbpp = (want_alpha && sbpp == 4) ? 4 : 3;
+												// The buffer is at gfx_resolution horizontally and gfx_vresolution
+												// vertically, so when those differ its pixels are not square: a
+												// superhires, line-doubled frame is 1512x486 for a 720x488 display.
+												// Box-average the finer axis down so the PNG has the shape that is
+												// actually on screen rather than a stretched one.
+												int xshift = 0, yshift = 0;
+												if(!want_raw) {
+													xshift = currprefs.gfx_resolution - currprefs.gfx_vresolution;
+													if(xshift < 0) {
+														yshift = -xshift;
+														xshift = 0;
+													}
+													if(xshift > 3) xshift = 3;
+													if(yshift > 3) yshift = 3;
+												}
+												const int xdiv = 1 << xshift;
+												const int ydiv = 1 << yshift;
+												const int ow = w / xdiv > 0 ? w / xdiv : 1;
+												const int oh = h / ydiv > 0 ? h / ydiv : 1;
+												// flip vertically and swap BGR(A) -> RGB(A)
+												auto bits = std::make_unique<uint8_t[]>((size_t)ow * dbpp * oh);
+												const unsigned navg = (unsigned)xdiv * ydiv;
+												for(int y = 0; y < oh; y++) {
+													for(int x = 0; x < ow; x++) {
+														unsigned acc[4] = { 0, 0, 0, 0 };
+														for(int sy = 0; sy < ydiv; sy++) {
+															const uint8_t* sp = sbi_bits + (size_t)(h - 1 - (y * ydiv + sy)) * pitch + (size_t)(x * xdiv) * sbpp;
+															for(int sx = 0; sx < xdiv; sx++, sp += sbpp) {
+																acc[0] += sp[2];
+																acc[1] += sp[1];
+																acc[2] += sp[0];
+																acc[3] += (sbpp == 4) ? sp[3] : 255;
+															}
+														}
+														uint8_t* dp = bits.get() + ((size_t)y * ow + x) * dbpp;
+														dp[0] = (uint8_t)(acc[0] / navg);
+														dp[1] = (uint8_t)(acc[1] / navg);
+														dp[2] = (uint8_t)(acc[2] / navg);
+														if(dbpp == 4)
+															dp[3] = (uint8_t)(acc[3] / navg);
 													}
 												}
 												// write PNG to file using stb_image_write
-												if(stbi_write_png(filepath.c_str(), w, h, 3, bits.get(), w * 3)) {
-													barto_log("GDBSERVER: screenshot saved: %dx%d to '%s'\n", w, h, filepath.c_str());
+												if(stbi_write_png(filepath.c_str(), ow, oh, dbpp, bits.get(), ow * dbpp)) {
+													barto_log("GDBSERVER: screenshot saved: %dx%d (buffer %dx%d %dbpp) ->%dch to '%s'\n", ow, oh, w, h, (int)sbi->bmiHeader.biBitCount, dbpp, filepath.c_str());
 													// send back dimensions as hex-encoded text
 													char info[256];
-													snprintf(info, sizeof(info), "OK %dx%d %s", w, h, filepath.c_str());
+													snprintf(info, sizeof(info), "OK %dx%d %s", ow, oh, filepath.c_str());
 													response += to_hex(std::string(info));
 												} else {
 													barto_log("GDBSERVER: screenshot write failed: '%s'\n", filepath.c_str());
@@ -895,7 +953,7 @@ namespace barto_gdbserver {
 											} else {
 												barto_log("GDBSERVER: screenshot: unsupported format (bpp=%d)\n",
 													sbi ? sbi->bmiHeader.biBitCount : 0);
-												response += "E02";
+												response += "E04";
 											}
 										} else {
 											barto_log("GDBSERVER: screenshot_prepare failed\n");
