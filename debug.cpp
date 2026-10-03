@@ -8696,12 +8696,20 @@ void debug (void)
 		debugging = -1;
 	}
 	resume_sound ();
-	inputdevice_acquire (TRUE);
+	// With the gdbserver attached, a stop/resume must not grab the user's
+	// mouse and keyboard or pull the window to the foreground. Capture comes
+	// back the normal way, by clicking in the window.
+	if (!(currprefs.debugging_features & (1 << 2))) {
+		inputdevice_acquire (TRUE);
 #ifdef WITH_PPC
-	uae_ppc_pause(0);
+		uae_ppc_pause(0);
 #endif
-	setmouseactive(0, wasactive ? 2 : 0);
-	target_inputdevice_acquire();
+		setmouseactive(0, wasactive ? 2 : 0);
+		target_inputdevice_acquire();
+	}
+#ifdef WITH_PPC
+	else uae_ppc_pause(0);
+#endif
 
 	last_cycles1 = get_cycles();
 	last_vpos1 = vpos;
