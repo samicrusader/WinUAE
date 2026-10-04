@@ -22,7 +22,7 @@
 #define WINUAEBETA _T("")
 #endif
 
-#define WINUAEEXTRA _T("Barto's GDBServer Edition") // BARTO
+#define WINUAEEXTRA _T("Heroin Junkie Edition") // BARTO
 //#define WINUAEEXTRA _T("AmiKit Preview")
 //#define WINUAEEXTRA _T("Amiga Forever Edition")
 
