@@ -13,6 +13,7 @@
 #define WINUAEBETA _T("")
 #endif
 
+#define WINUAEEXTRA _T("Heroin Junkie Edition")
 //#define WINUAEEXTRA _T("AmiKit Preview")
 //#define WINUAEEXTRA _T("Amiga Forever Edition")
 
