@@ -675,6 +675,11 @@ struct uae_prefs {
 	int genlock_control;
 	TCHAR genlock_image_file[MAX_DPATH];
 	TCHAR genlock_video_file[MAX_DPATH];
+	int genlock_ld_offset;
+	bool genlock_audio_mute;
+	TCHAR genlock_ld_stops[MAX_DPATH];
+	TCHAR genlock_ld_audio[MAX_DPATH];
+	TCHAR genlock_ld_discid[16];
 	TCHAR genlock_font[MAX_DPATH];
 	int monitoremu;
 	int monitoremu_mon;

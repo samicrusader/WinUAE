@@ -19,6 +19,7 @@
 // following have been removed from newer SDKs
 
 static const IID IID_ISampleGrabber = { 0x6B652FFF, 0x11FE, 0x4fce, { 0x92, 0xAD, 0x02, 0x66, 0xB5, 0xD7, 0xC7, 0x8F } };
+static const IID IID_ISampleGrabberCB = { 0x0579154A, 0x2B53, 0x4994, { 0xB0, 0xD0, 0xE7, 0x73, 0x14, 0x8E, 0xFF, 0x85 } };
 static const CLSID CLSID_SampleGrabber = { 0xC1F400A0, 0x3F08, 0x11d3, { 0x9F, 0x0B, 0x00, 0x60, 0x08, 0x03, 0x9E, 0x37 } };
 static const CLSID CLSID_NullRenderer = { 0xC1F400A4, 0x3F08, 0x11d3, { 0x9F, 0x0B, 0x00, 0x60, 0x08, 0x03, 0x9E, 0x37 } };
 
@@ -54,6 +55,167 @@ static long bufferSize;
 static long frameBufferBytes;
 static int videoWidth, videoHeight;
 static int audio_chflags, audio_volume;
+/* The selected disc track, copied over the other so the chosen programme
+ * reaches both outputs. audio_chflags is written from the emulation thread
+ * and read on the streaming thread; a torn int here is at worst one wrong
+ * buffer, so it is deliberately unsynchronised. */
+static CComPtr<ISampleGrabber> audioGrabber;
+static bool audio_select_ok;
+static int audio_bits, audio_channels;
+
+class AudioChannelCB : public ISampleGrabberCB
+{
+public:
+	LONG refs;
+	AudioChannelCB() : refs(1) {}
+	virtual ~AudioChannelCB() {}
+	STDMETHODIMP QueryInterface(REFIID riid, void **ppv)
+	{
+		if (!ppv)
+			return E_POINTER;
+		if (riid == IID_IUnknown || riid == IID_ISampleGrabberCB) {
+			*ppv = static_cast<ISampleGrabberCB*>(this);
+			AddRef();
+			return S_OK;
+		}
+		*ppv = NULL;
+		return E_NOINTERFACE;
+	}
+	STDMETHODIMP_(ULONG) AddRef(void) { return InterlockedIncrement(&refs); }
+	STDMETHODIMP_(ULONG) Release(void) { return InterlockedDecrement(&refs); }
+	STDMETHODIMP SampleCB(double t, IMediaSample *samp)
+	{
+		BYTE *p = NULL;
+		if (!samp || FAILED(samp->GetPointer(&p)) || !p)
+			return S_OK;
+		apply(p, samp->GetActualDataLength());
+		return S_OK;
+	}
+	STDMETHODIMP BufferCB(double t, BYTE *p, long len)
+	{
+		apply(p, len);
+		return S_OK;
+	}
+	void apply(BYTE *p, long len)
+	{
+		int ch = audio_chflags;
+		if (!p || len <= 0 || audio_channels != 2)
+			return;
+		if (ch != 1 && ch != 2)
+			return;		/* 3 = both tracks as-is, 0 = muted by volume */
+		int src = (ch == 1) ? 0 : 1;
+		int dst = 1 - src;
+		int bytes = audio_bits / 8;
+		if (bytes != 2 && bytes != 3 && bytes != 4)
+			return;
+		long frame = bytes * 2;
+		long n = len / frame;
+		/* raw byte copy, so this is right for 16/24/32-bit PCM and float32 */
+		for (long i = 0; i < n; i++) {
+			BYTE *b = p + i * frame;
+			memcpy(b + dst * bytes, b + src * bytes, bytes);
+		}
+	}
+};
+static AudioChannelCB audioCB;
+
+/* Find the filter that renders audio -- a connected MEDIATYPE_Audio input
+ * and no outputs -- and splice a Sample Grabber in front of it. */
+static bool insert_audio_grabber(void)
+{
+	CComPtr<IEnumFilters> en;
+	if (FAILED(filterGraph->EnumFilters(&en)))
+		return false;
+	IBaseFilter *f = NULL;
+	ULONG got = 0;
+	CComPtr<IPin> rendIn;
+	while (!rendIn && en->Next(1, &f, &got) == S_OK && f) {
+		CComPtr<IEnumPins> ep;
+		if (SUCCEEDED(f->EnumPins(&ep))) {
+			IPin *pin = NULL;
+			bool hasOut = false;
+			CComPtr<IPin> candidate;
+			while (ep->Next(1, &pin, NULL) == S_OK && pin) {
+				PIN_DIRECTION dir;
+				if (SUCCEEDED(pin->QueryDirection(&dir))) {
+					if (dir == PINDIR_OUTPUT) {
+						hasOut = true;
+					} else {
+						AM_MEDIA_TYPE mt;
+						memset(&mt, 0, sizeof mt);
+						if (SUCCEEDED(pin->ConnectionMediaType(&mt))) {
+							if (mt.majortype == MEDIATYPE_Audio)
+								candidate = pin;
+							if (mt.pbFormat)
+								CoTaskMemFree(mt.pbFormat);
+						}
+					}
+				}
+				pin->Release();
+				pin = NULL;
+			}
+			if (!hasOut && candidate)
+				rendIn = candidate;
+		}
+		f->Release();
+		f = NULL;
+	}
+	if (!rendIn) {
+		write_log(_T("videograb: no audio renderer found\n"));
+		return false;
+	}
+	CComPtr<IPin> upstream;
+	if (FAILED(rendIn->ConnectedTo(&upstream)) || !upstream)
+		return false;
+
+	CComPtr<IBaseFilter> agFilter;
+	if (FAILED(agFilter.CoCreateInstance(CLSID_SampleGrabber)))
+		return false;
+	if (FAILED(agFilter->QueryInterface(IID_ISampleGrabber, (void**)&audioGrabber)))
+		return false;
+	AM_MEDIA_TYPE want;
+	memset(&want, 0, sizeof want);
+	want.majortype = MEDIATYPE_Audio;	/* any PCM flavour the decoder gives */
+	audioGrabber->SetMediaType(&want);
+	audioGrabber->SetBufferSamples(FALSE);
+	if (FAILED(filterGraph->AddFilter(agFilter, L"Audio Channel Select")))
+		return false;
+	if (FAILED(upstream->Disconnect()) || FAILED(rendIn->Disconnect()))
+		return false;
+
+	CComPtr<IPin> agIn, agOut;
+	if (FAILED(agFilter->FindPin(L"In", &agIn)) ||
+		FAILED(agFilter->FindPin(L"Out", &agOut)))
+		return false;
+	if (FAILED(filterGraph->ConnectDirect(upstream, agIn, NULL))) {
+		if (FAILED(filterGraph->Connect(upstream, agIn)))
+			return false;
+	}
+	if (FAILED(filterGraph->Connect(agOut, rendIn)))
+		return false;
+
+	AM_MEDIA_TYPE got2;
+	memset(&got2, 0, sizeof got2);
+	if (SUCCEEDED(audioGrabber->GetConnectedMediaType(&got2))) {
+		if (got2.formattype == FORMAT_WaveFormatEx && got2.pbFormat) {
+			WAVEFORMATEX *wf = (WAVEFORMATEX*)got2.pbFormat;
+			audio_bits = wf->wBitsPerSample;
+			audio_channels = wf->nChannels;
+		}
+		if (got2.pbFormat)
+			CoTaskMemFree(got2.pbFormat);
+	}
+	if (FAILED(audioGrabber->SetCallback(&audioCB, 0)))
+		return false;
+	write_log(_T("videograb: audio channel select active, %d-bit %d channels\n"),
+		audio_bits, audio_channels);
+	return true;
+}
+
+static long *grabBuffer;
+static long grabBufferBytes;
+static int grabWidth, grabHeight;
+static bool videoFrozen;
 
 void uninitvideograb(void)
 {
@@ -63,6 +225,10 @@ void uninitvideograb(void)
 	videoPaused = -1;
 	audio_chflags = 0;
 	audio_volume = 0;
+	audioGrabber.Release();
+	audio_select_ok = false;
+	audio_bits = 0;
+	audio_channels = 0;
 
 	sampleGrabber.Release();
 	mediaSeeking.Release();
@@ -311,7 +477,33 @@ bool initvideograb(const TCHAR *filename)
 
 	hr = filterGraph->QueryInterface(IID_IMediaEvent, (void**)&mediaEvent);
 
+	/* What did RenderFile actually build? A missing audio renderer is the
+	 * difference between "muted" and "there was never any sound". */
+	{
+		CComPtr<IEnumFilters> en;
+		if (SUCCEEDED(filterGraph->EnumFilters(&en))) {
+			IBaseFilter *f = NULL;
+			ULONG got = 0;
+			while (en->Next(1, &f, &got) == S_OK && f) {
+				FILTER_INFO fi;
+				memset(&fi, 0, sizeof fi);
+				if (SUCCEEDED(f->QueryFilterInfo(&fi))) {
+					write_log(_T("videograb filter: '%s'\n"), fi.achName);
+					if (fi.pGraph)
+						fi.pGraph->Release();
+				}
+				f->Release();
+				f = NULL;
+			}
+		}
+	}
+
+	audio_select_ok = insert_audio_grabber();
+
 	hr = filterGraph->QueryInterface(IID_IBasicAudio, (void**)&audio);
+	write_log(_T("videograb IBasicAudio %08x, iface %p, genlock_audio_mute %d, sound_volume_genlock %d\n"),
+		hr, (void*)audio, currprefs.genlock_audio_mute ? 1 : 0,
+		currprefs.sound_volume_genlock);
 	setvolumevideograb(100 - currprefs.sound_volume_genlock);
 	setchflagsvideograb(0, false);
 
@@ -378,21 +570,28 @@ void setchflagsvideograb(int chflags, bool mute)
 	if (!audio)
 		return;
 	audio_chflags = chflags;
-	long bal;
-	if (chflags == 1) {
-		bal = -10000;
-	} else if (chflags == 2) {
-		bal = 10000;
-	} else {
-		bal = 0;
+	/* With the channel-select grabber in place the chosen track is already
+	 * on both outputs, so the balance stays centred. Panning is only the
+	 * fallback for when the splice failed -- it isolates the right
+	 * programme, just on one speaker. */
+	long bal = 0;
+	if (!audio_select_ok) {
+		if (chflags == 1)
+			bal = -10000;
+		else if (chflags == 2)
+			bal = 10000;
 	}
 	if (!currprefs.win32_videograb_balance) {
 		audio->put_Balance(bal);
 	}
-	if (chflags && !mute) {
+	if (chflags && !mute && !currprefs.genlock_audio_mute) {
 		setvolumevideograb(audio_volume);
-	} else if (!chflags || mute) {
-		audio->put_Volume(0);
+	} else {
+		// IBasicAudio is an attenuation: 0 is FULL volume and -10000 is
+		// silence. Putting 0 here muted nothing - it did the opposite, and
+		// since initvideograb() calls this with chflags 0 the clip played at
+		// full blast the moment the graph was built.
+		audio->put_Volume(-10000);
 	}
 }
 
@@ -401,10 +600,16 @@ void setvolumevideograb(int volume)
 	if (!audio)
 		return;
 	audio_volume = volume;
-	if (!audio_chflags) {
+	if (!audio_chflags || currprefs.genlock_audio_mute) {
 		volume = 0;
 	}
-	long vol = (long)(log10((float)volume / 100.0) * 4000.0);
+	// log10(0) is -inf and the cast to long is undefined, so silence has to
+	// be the explicit -10000 rather than something the FPU happens to hand us.
+	long vol = volume > 0 ? (long)(log10((float)volume / 100.0) * 4000.0) : -10000;
+	if (vol < -10000)
+		vol = -10000;
+	else if (vol > 0)
+		vol = 0;
 	audio->put_Volume(vol);
 }
 
@@ -434,12 +639,54 @@ void pausevideograb(int pause)
 	}
 }
 
+bool getfreezevideograb(void)
+{
+	return videoFrozen;
+}
+
+/* Snapshot the frame on screen now and keep handing it out until the
+ * freeze is lifted. The graph is left alone, so sound carries on from
+ * wherever the player was sent. */
+void setfreezevideograb(int freeze)
+{
+	if (!videoInitialized || freeze <= 0) {
+		videoFrozen = false;
+		return;
+	}
+	if (videoFrozen)
+		return;
+	long *b = NULL;
+	int w = 0, h = 0;
+	if (!getvideograb(&b, &w, &h) || !b)
+		return;
+	long stride = (w * 3 + 3) & ~3;
+	long need = stride * (h < 0 ? -h : h);
+	if (need <= 0)
+		return;
+	if (!grabBuffer || need > grabBufferBytes) {
+		delete[] grabBuffer;
+		grabBuffer = new long[(need + 3) / 4];
+		grabBufferBytes = need;
+	}
+	memcpy(grabBuffer, b, need);
+	grabWidth = w;
+	grabHeight = h;
+	videoFrozen = true;
+}
+
 bool getvideograb(long **buffer, int *width, int *height)
 {
 	HRESULT hr;
 
 	if (!videoInitialized)
 		return false;
+
+	if (videoFrozen && grabBuffer) {
+		*buffer = grabBuffer;
+		*width = grabWidth;
+		*height = grabHeight;
+		return true;
+	}
 
 	// The caller reads a whole RGB24 frame (rows padded to 4 bytes) out of
 	// the buffer, so never hand out one that holds less than that, and grow
@@ -503,6 +750,10 @@ void isvideograb_status(void)
 {
 	if (!videoInitialized)
 		return;
+	if (currprefs.genlock_audio_mute != changed_prefs.genlock_audio_mute) {
+		currprefs.genlock_audio_mute = changed_prefs.genlock_audio_mute;
+		setchflagsvideograb(audio_chflags, currprefs.genlock_audio_mute);
+	}
 	if (currprefs.sound_volume_genlock != changed_prefs.sound_volume_genlock) {
 		currprefs.sound_volume_genlock = changed_prefs.sound_volume_genlock;
 		setvolumevideograb(100 - currprefs.sound_volume_genlock);

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="FullRelease|ARM64">
@@ -1222,6 +1222,8 @@
     <ClCompile Include="..\..\amax.cpp" />
     <ClCompile Include="..\..\ar.cpp" />
     <ClCompile Include="..\..\arcadia.cpp" />
+    <ClCompile Include="..\..\uvserial.cpp" />
+    <ClCompile Include="..\..\pioneerld.cpp" />
     <ClCompile Include="..\..\audio.cpp" />
     <ClCompile Include="..\..\autoconf.cpp" />
     <ClCompile Include="..\..\blitfunc.cpp" />

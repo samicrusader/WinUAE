@@ -24,6 +24,7 @@
 #include "videograb.h"
 #endif
 #include "arcadia.h"
+#include "pioneerld.h"
 #include "uae/attributes.h"
 
 const TCHAR *specialmonitorfriendlynames[] =
@@ -2617,6 +2618,21 @@ static bool do_genlock(struct vidbuffer *src, struct vidbuffer *dst, bool double
 				genlock_video = initvideograb(currprefs.genlock_video_file);
 				if (!genlock_video) {
 					genlock_error = true;
+				} else if (currprefs.genlock_image >= 8) {
+					// initvideograb() Run()s the graph the moment it is built. A
+					// laserdisc player comes up parked and plays nothing until the
+					// host tells it to, and genlock_blank only hides the picture -
+					// the audio renderer keeps going - so without this the disc
+					// starts playing as soon as the config is loaded.
+					pausevideograb(1);
+				}
+			}
+			if (currprefs.genlock_image >= 8) {
+				if (!pioneerld_active()) {
+					genlock_blank = true;
+					if (!getpausevideograb())
+						pausevideograb(1);
+					goto skip;
 				}
 			}
 			if (currprefs.genlock_image == 6) {
@@ -2630,7 +2646,7 @@ static bool do_genlock(struct vidbuffer *src, struct vidbuffer *dst, bool double
 			if (currprefs.genlock_image == 6 || currprefs.genlock_image == 7) {
 				genlock_blank = !ld_video_enabled();
 			} else if (currprefs.genlock_image >= 8) {
-				genlock_blank = false;
+				genlock_blank = !pioneerld_video_enabled();
 			}
 		} else {
 			genlock_error = true;

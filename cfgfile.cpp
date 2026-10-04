@@ -2615,11 +2615,16 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 
 	cfgfile_write_bool(f, _T("genlock"), p->genlock);
 	cfgfile_dwrite_bool(f, _T("genlock_alpha"), p->genlock_alpha);
+	cfgfile_dwrite_bool(f, _T("genlock_audio_mute"), p->genlock_audio_mute);
 	cfgfile_dwrite_strarr(f, _T("genlock_control"), genlockcontrol, p->genlock_control);
 	cfgfile_dwrite_bool(f, _T("genlock_aspect"), p->genlock_aspect);
 	cfgfile_dwrite_strarr(f, _T("genlockmode"), genlockmodes, p->genlock_image);
 	cfgfile_dwrite_str(f, _T("genlock_image"), p->genlock_image_file);
 	cfgfile_dwrite_str(f, _T("genlock_video"), p->genlock_video_file);
+	cfgfile_dwrite(f, _T("genlock_ld_offset"), _T("%d"), p->genlock_ld_offset);
+	cfgfile_dwrite_str(f, _T("genlock_ld_discid"), p->genlock_ld_discid);
+	cfgfile_dwrite_str(f, _T("genlock_ld_stops"), p->genlock_ld_stops);
+	cfgfile_dwrite_str(f, _T("genlock_ld_audio"), p->genlock_ld_audio);
 	cfgfile_dwrite_str(f, _T("genlock_font"), p->genlock_font);
 	cfgfile_dwrite(f, _T("genlock_mix"), _T("%d"), p->genlock_mix);
 	cfgfile_dwrite(f, _T("genlock_scale"), _T("%d"), p->genlock_scale);
@@ -6058,6 +6063,7 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_yesno(option, value, _T("sana2"), &p->sana2)
 		|| cfgfile_yesno(option, value, _T("genlock"), &p->genlock)
 		|| cfgfile_yesno(option, value, _T("genlock_alpha"), &p->genlock_alpha)
+		|| cfgfile_yesno(option, value, _T("genlock_audio_mute"), &p->genlock_audio_mute)
 		|| cfgfile_yesno(option, value, _T("genlock_aspect"), &p->genlock_aspect)
 		|| cfgfile_yesno(option, value, _T("cpu_data_cache"), &p->cpu_data_cache)
 		|| cfgfile_yesno(option, value, _T("cpu_threaded"), &p->cpu_thread)
@@ -6196,6 +6202,10 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_path(option, value, _T("picassoiv_rom_file"), p->picassoivromfile, sizeof p->picassoivromfile / sizeof(TCHAR), &p->path_rom)
 		|| cfgfile_string(option, value, _T("genlock_image"), p->genlock_image_file, sizeof p->genlock_image_file / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_video"), p->genlock_video_file, sizeof p->genlock_video_file / sizeof(TCHAR))
+		|| cfgfile_intval(option, value, _T("genlock_ld_offset"), &p->genlock_ld_offset, 1)
+		|| cfgfile_string(option, value, _T("genlock_ld_discid"), p->genlock_ld_discid, sizeof p->genlock_ld_discid / sizeof(TCHAR))
+		|| cfgfile_string(option, value, _T("genlock_ld_stops"), p->genlock_ld_stops, sizeof p->genlock_ld_stops / sizeof(TCHAR))
+		|| cfgfile_string(option, value, _T("genlock_ld_audio"), p->genlock_ld_audio, sizeof p->genlock_ld_audio / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_font"), p->genlock_font, sizeof p->genlock_font / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T ("pci_devices"), p->pci_devices, sizeof p->pci_devices / sizeof(TCHAR))
 		|| cfgfile_string (option, value, _T("ghostscript_parameters"), p->ghostscript_parameters, sizeof p->ghostscript_parameters / sizeof (TCHAR)))
