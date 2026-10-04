@@ -205,6 +205,12 @@
     <ClCompile Include="..\..\arcadia.cpp">
       <Filter>common</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\uvserial.cpp">
+      <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\pioneerld.cpp">
+      <Filter>common</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\audio.cpp">
       <Filter>common</Filter>
     </ClCompile>

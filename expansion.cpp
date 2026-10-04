@@ -29,6 +29,7 @@
 #endif
 #ifdef A2065
 #include "a2065.h"
+#include "uvserial.h"
 #endif
 #include "gfxboard.h"
 #ifdef CD32
@@ -6389,6 +6390,15 @@ const struct expansionromtype expansionroms[] = {
 		{ 0xc1, 0xc9, 0x00, 0x00, 2167 >> 8, 2167 & 255, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }
 	},
 #endif
+	{
+		_T("uvserial"), _T("Multiserial"), _T("United Video"),
+		NULL, uvserial_init, NULL, NULL, ROMTYPE_UVSERIAL | ROMTYPE_NOT, 0, 0, BOARD_AUTOCONFIG_Z2, true,
+		NULL, 0,
+		false, EXPANSIONTYPE_CUSTOM,
+		0, 0, 0, false, NULL,
+		false, 0, NULL,
+		{ 0xc1, 0x01, 0x00, 0x00, 0x21, 0x79, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }
+	},
 #ifdef WITH_QEMU_CPU
 	{
 		_T("ariadne2"), _T("Ariadne II"), _T("Village Tronic"),

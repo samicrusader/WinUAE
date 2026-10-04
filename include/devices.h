@@ -50,7 +50,8 @@ void device_call_main_thread_callbacks(void);
 #define IRQ_SOURCE_CD32CDTV 13
 #define IRQ_SOURCE_IDE 14
 #define IRQ_SOURCE_GFX 15
-#define IRQ_SOURCE_MAX 16
+#define IRQ_SOURCE_UVSERIAL 16
+#define IRQ_SOURCE_MAX 17
 
 
 #endif /* UAE_DEVICES_H */

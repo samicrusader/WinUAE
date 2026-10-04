@@ -21,6 +21,7 @@
 #include "newcpu.h"
 #include "debug.h"
 #include "arcadia.h"
+#include "pioneerld.h"
 #include "zfile.h"
 #ifdef VIDEOGRAB
 #include "videograb.h"
@@ -1332,11 +1333,11 @@ static int sony_serial_write(void)
 
 static void pioneer_serial_read(uae_u16 w)
 {
-	w &= 0xff;
+	pioneerld_put((uae_u8)(w & 0xff));
 }
 static int pioneer_serial_write(void)
 {
-	return -1;
+	return pioneerld_get();
 }
 
 void ld_serial_read(uae_u16 w)
