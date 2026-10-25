@@ -2149,6 +2149,7 @@ set(WINUAE_CORE_SOURCES
     fpp_native.cpp
     fpp_softfloat.cpp
     framebufferboards.cpp
+    pioneerld.cpp
     fsdb.cpp
     fsdb_unix.cpp
     gayle.cpp
@@ -2196,6 +2197,7 @@ set(WINUAE_CORE_SOURCES
     traps.cpp
     uaeexe.cpp
     uaelib.cpp
+    uvserial.cpp
     uaeresource.cpp
     vm.cpp
     writelog.cpp
