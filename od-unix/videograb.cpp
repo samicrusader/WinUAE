@@ -84,6 +84,10 @@ static bool video_initialized;
 static bool avi_top_down;
 static uae_s64 loaded_frame = -1;
 static bool audio_muted;
+static bool video_frozen;
+static std::vector<long> frozen_buffer;
+static int frozen_width;
+static int frozen_height;
 
 #ifdef UAE_UNIX_WITH_SDL3
 static SDL_Camera *camera;
@@ -118,7 +122,8 @@ static bool ffmpeg_audio_sdl_initialized;
 #endif
 static float ffmpeg_audio_gain(void)
 {
-    if (!audio_output_enabled || audio_muted || audio_master_muted || !audio_chflags) {
+    if (!audio_output_enabled || audio_muted || audio_master_muted || !audio_chflags
+        || currprefs.genlock_audio_mute) {
         return 0.0f;
     }
     const float source_gain = std::max(0, std::min(100, audio_volume)) / 100.0f;
@@ -899,13 +904,16 @@ static void ffmpeg_filter_audio_channels(uae_s16 *samples, int frames)
     if (!samples || frames <= 0) {
         return;
     }
+    /* The selected disc track goes to both outputs, so the chosen
+     * programme is heard on both speakers (matches od-win32's channel-select
+     * grabber). 3 = both tracks as-is. */
     if (audio_chflags == 1) {
         for (int i = 0; i < frames; i++) {
-            samples[i * 2 + 1] = 0;
+            samples[i * 2 + 1] = samples[i * 2];
         }
     } else if (audio_chflags == 2) {
         for (int i = 0; i < frames; i++) {
-            samples[i * 2] = 0;
+            samples[i * 2] = samples[i * 2 + 1];
         }
     }
 }
@@ -1507,6 +1515,8 @@ void uninitvideograb(void)
     audio_chflags = 0;
     audio_volume = 0;
     audio_muted = false;
+    video_frozen = false;
+    frozen_buffer.clear();
 }
 
 bool initvideograb(const TCHAR *filename)
@@ -1558,6 +1568,13 @@ bool getvideograb(long **buffer, int *width, int *height)
 {
     if (!video_initialized || !buffer || !width || !height) {
         return false;
+    }
+
+    if (video_frozen && !frozen_buffer.empty()) {
+        *buffer = frozen_buffer.data();
+        *width = frozen_width;
+        *height = frozen_height;
+        return true;
     }
 
     if (videograb_mode == VIDEOGRAB_CAMERA) {
@@ -1693,6 +1710,40 @@ bool isvideograb(void)
     return video_initialized;
 }
 
+bool getfreezevideograb(void)
+{
+    return video_frozen;
+}
+
+/* Snapshot the frame on screen now and keep handing it out until the
+ * freeze is lifted. Decoding carries on, so sound continues from wherever
+ * the player was sent. This is the Sneak Prevue frame grab. */
+void setfreezevideograb(int freeze)
+{
+    if (!video_initialized || freeze <= 0) {
+        video_frozen = false;
+        return;
+    }
+    if (video_frozen) {
+        return;
+    }
+    long *b = NULL;
+    int w = 0, h = 0;
+    if (!getvideograb(&b, &w, &h) || !b) {
+        return;
+    }
+    if (b != frame_buffer.data() || frame_buffer.empty()) {
+        /* camera frames live elsewhere; size them the same way */
+        const size_t n = (size_t)w * (size_t)(h < 0 ? -h : h);
+        frozen_buffer.assign(b, b + n);
+    } else {
+        frozen_buffer = frame_buffer;
+    }
+    frozen_width = w;
+    frozen_height = h;
+    video_frozen = true;
+}
+
 bool getpausevideograb(void)
 {
     return video_paused > 0;
@@ -1745,6 +1796,10 @@ void isvideograb_status(void)
     if (currprefs.sound_volume_genlock != changed_prefs.sound_volume_genlock) {
         currprefs.sound_volume_genlock = changed_prefs.sound_volume_genlock;
         setvolumevideograb(100 - currprefs.sound_volume_genlock);
+        setchflagsvideograb(audio_chflags, audio_muted);
+    }
+    if (currprefs.genlock_audio_mute != changed_prefs.genlock_audio_mute) {
+        currprefs.genlock_audio_mute = changed_prefs.genlock_audio_mute;
         setchflagsvideograb(audio_chflags, audio_muted);
     }
 }
