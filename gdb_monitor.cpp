@@ -230,7 +230,12 @@ MonitorResult GdbMonitor::status_command(const std::string& command, std::string
 		result = "{\"protocol\":1,\"cpu_model\":" + std::to_string(currprefs.cpu_model) +
 			",\"mmu_model\":" + std::to_string(currprefs.mmu_model) +
 			",\"memory_addressing\":\"physical\",\"commands\":[" + commands +
-			"],\"execution\":[\"continue\",\"step\",\"range-step\",\"step-over\"],\"exception_details\":true}";
+			"],\"execution\":[\"continue\",\"step\",\"range-step\",\"step-over\"],\"exception_details\":true" +
+			// Screenshots are the raw frame buffer: lores/hires/superhires = 0/1/2
+			// horizontally against 0/1/2 vertically, so a client scales by
+			// 2^(resolution - vresolution) to get the displayed aspect.
+			",\"display\":{\"resolution\":" + std::to_string(currprefs.gfx_resolution) +
+			",\"vresolution\":" + std::to_string(currprefs.gfx_vresolution) + "}}";
 		return MonitorResult::ok;
 	}
 	if (command == "execution-status") {
