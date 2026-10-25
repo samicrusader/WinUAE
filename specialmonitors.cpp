@@ -3947,6 +3947,18 @@ bool emulate_specialmonitors(struct vidbuffer *src, struct vidbuffer *dst)
 	return ret;
 }
 
+// Emulator shutdown. A genlock video source is only closed by a reset or by
+// the genlock being switched off, so without this its DirectShow graph is
+// still streaming when the process exits and the splitter's reader thread
+// (LAV avformat) faults on memory that is already gone.
+void specialmonitor_free(void)
+{
+#ifdef VIDEOGRAB
+	close_genlock_video();
+	genlock_error = false;
+#endif
+}
+
 void specialmonitor_reset(void)
 {
 #ifdef VIDEOGRAB

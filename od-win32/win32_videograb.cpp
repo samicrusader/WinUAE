@@ -223,6 +223,12 @@ void uninitvideograb(void)
 
 	videoInitialized = false;
 	videoPaused = -1;
+	// Stop the graph before letting go of anything in it: Stop() waits for
+	// the streaming threads, so nothing is still reading the file or calling
+	// back into the grabbers while they are being released.
+	if (mediaControl) {
+		mediaControl->Stop();
+	}
 	audio_chflags = 0;
 	audio_volume = 0;
 	audioGrabber.Release();
@@ -234,9 +240,6 @@ void uninitvideograb(void)
 	mediaSeeking.Release();
 	mediaEvent.Release();
 	audio.Release();
-	if (mediaControl) {
-		mediaControl->Stop();
-	}
 	mediaControl.Release();
 	filterGraph.Release();
 	graphBuilder.Release();

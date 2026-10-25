@@ -82,6 +82,7 @@
 #include "dsp3210/dsp_glue.h"
 #endif
 #include "keyboard_mcu.h"
+#include "specialmonitors.h"
 
 #define MAX_DEVICE_ITEMS 64
 
@@ -391,6 +392,9 @@ void virtualdevice_free(void)
 	bsdlib_reset();
 #endif
 	sampler_free();
+#ifdef WITH_SPECIALMONITORS
+	specialmonitor_free();
+#endif
 	inputdevice_close();
 	DISK_free();
 	dump_counts();
