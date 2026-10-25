@@ -17,6 +17,7 @@
 #include "custom.h"
 #include "drawing.h"
 #include "memory.h"
+#include "newcpu.h"
 #include "specialmonitors.h"
 #include "debug.h"
 #include "zfile.h"
@@ -2311,6 +2312,16 @@ void genlock_serial_control(uae_u8 pra, uae_u8 dra)
 		return;
 	}
 	genlock_ctrl_lines = lines;
+	// The card starts keying the first time software drives its control
+	// lines. Kickstart's own CIA setup touches them too (from ROM, about 2.3 s
+	// into a cold boot), and that is not the software asking for anything.
+	if (currprefs.genlock_control && !genlock_get_keying() &&
+		currprefs.genlock_image > 0 && currprefs.genlock_image < 6) {
+		addrbank &pcbank = get_mem_bank(M68K_GETPC);
+		if (!(pcbank.flags & (ABFLAG_ROM | ABFLAG_ROMIN))) {
+			genlock_set_keying(true, _T("software drove the control lines"));
+		}
+	}
 	bool rts = !(lines & 0x40);
 	bool dtr = !(lines & 0x80);
 	int mode = GENLOCK_CTRL_OVERLAY;
@@ -2322,13 +2333,41 @@ void genlock_serial_control(uae_u8 pra, uae_u8 dra)
 	if (mode != genlock_ctrl_mode) {
 		genlock_ctrl_mode = mode;
 		if (currprefs.genlock_control) {
-			write_log(_T("GENLOCK: RTS=%d DTR=%d -> %s\n"), rts, dtr, genlock_ctrl_names[mode]);
+			write_log(_T("GENLOCK: RTS=%d DTR=%d -> %s (PC %08x)\n"), rts, dtr, genlock_ctrl_names[mode], M68K_GETPC);
 		}
 	}
 }
 
+/*
+ * Whether the genlock is keying: runtime state, not a config option. The
+ * genlock option stays on for the whole session, so the video source keeps
+ * running and the Amiga keeps its external sync, the way a unit with a card
+ * fitted and video on the loop-through does. What a power-on changes is only
+ * what the card puts out: until the software asks for it (ERSY, or the
+ * LaserDisc player spinning up) the card passes the Amiga's own picture
+ * through, colour 0 included. Resets, warm or hard, leave the state alone.
+ */
+static bool genlock_keying = true;
+
+void genlock_set_keying(bool on, const TCHAR *why)
+{
+	if (genlock_keying == on)
+		return;
+	genlock_keying = on;
+	write_log(_T("GENLOCK: keying %s (%s)\n"), on ? _T("on") : _T("off"), why);
+}
+
+bool genlock_get_keying(void)
+{
+	return genlock_keying;
+}
+
 static int genlock_effective_mode(void)
 {
+	// Not keying looks exactly like Computer Only: the Amiga picture passes
+	// through untouched while the video source carries on behind it.
+	if (!genlock_keying && currprefs.genlock_image)
+		return GENLOCK_CTRL_COMPUTER;
 	return currprefs.genlock_control ? genlock_ctrl_mode : GENLOCK_CTRL_OVERLAY;
 }
 

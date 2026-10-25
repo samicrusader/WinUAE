@@ -3667,23 +3667,23 @@ static void BPLCON0(uae_u16 v)
 	bplcon0_saved = v;
 	uae_u16 va = BPLCON0_Agnus_mask(v);
 
-	// ERSY: Denise is being slaved to external sync, which is the Amiga
-	// asking the genlock to key. custom_reset() clears genlock on a cold
-	// boot, so this is what brings it back - the same rule
-	// restore_custom_finish() already applies to statefiles.
+	// ERSY: Denise is being slaved to external sync. custom_reset() stops
+	// the genlock keying on a cold boot; with no other signal to go on
+	// (genlock_control=none) this is what starts it again.
 	//
-	// Not for the LaserDisc genlock modes (genlock_image 6 and up). On a
-	// Sneak Prevue disk something in the early boot sets ERSY about 2.3
-	// seconds in, long before the player software runs, so keying off it
-	// would black out colour 0 for nearly the whole boot - you would never
-	// see the Amiga's own grey screen, which is the thing a real unit shows
-	// while the disc is still parked. Those modes enable genlock from the
-	// player's own activity instead (see pioneerld_vsync).
-	if ((v & 2) && !currprefs.genlock && currprefs.genlock_image < 6 &&
-		(currprefs.genlock_image || currprefs.genlock_effects)) {
-		changed_prefs.genlock = currprefs.genlock = 1;
-		write_log(_T("BPLCON0 ERSY set, enabling Genlock.\n"));
+	// It is a weak signal: Kickstart's graphics.library sets ERSY itself
+	// about 2.3 s into a cold boot (frame 137, from ROM) when it finds a
+	// genlock, and leaves it set. So the genlock modes that do have a better
+	// signal don't use it: genlock_control=serial keys when the software
+	// first drives the card's control lines (genlock_serial_control), and
+	// the LaserDisc modes (genlock_image 6 and up) key when the player spins
+	// up (pioneerld_vsync).
+#ifdef WITH_SPECIALMONITORS
+	if ((v & 2) && currprefs.genlock_image > 0 && currprefs.genlock_image < 6 &&
+		!currprefs.genlock_control && !genlock_get_keying()) {
+		genlock_set_keying(true, _T("BPLCON0 ERSY"));
 	}
+#endif
 
 #ifdef WITH_SPECIALMONITORS
 	// every write counts, including repeats: the genlock fader is a GAUD bitstream
@@ -6732,15 +6732,14 @@ void custom_reset(bool hardreset, bool keyboardreset)
 		// sync. Only POWER-ON does this. A reset - warm or hard, and the GUI
 		// Reset button is a hard one - does not power-cycle the genlock, so
 		// it keeps whatever state it was in, the way the hardware does.
-		// BPLCON0() turns it back on when the Amiga sets ERSY; the LaserDisc
-		// modes use the player instead (see pioneerld_vsync).
-		// Configs with no genlock source are left alone.
+		// BPLCON0() turns keying on when the Amiga sets ERSY; the LaserDisc
+		// modes use the player instead (see pioneerld_vsync). The genlock
+		// config option itself is never touched: keying is runtime state.
 		if (!genlock_cold_boot_done) {
 			genlock_cold_boot_done = true;
-			if (currprefs.genlock && (currprefs.genlock_image || currprefs.genlock_effects)) {
-				changed_prefs.genlock = currprefs.genlock = 0;
-				write_log(_T("Genlock off at power-on; it keys when asked.\n"));
-			}
+#ifdef WITH_SPECIALMONITORS
+			genlock_set_keying(false, _T("power-on"));
+#endif
 		}
 	}
 
@@ -7854,6 +7853,11 @@ void restore_custom_finish(void)
 		changed_prefs.genlock = currprefs.genlock = 1;
 		write_log(_T("statefile with BPLCON0 ERSY set without Genlock. Enabling Genlock.\n"));
 	}
+#ifdef WITH_SPECIALMONITORS
+	if (bplcon0 & 2) {
+		genlock_set_keying(true, _T("statefile with BPLCON0 ERSY"));
+	}
+#endif
 	init_hz_reset();
 }
 

@@ -15,6 +15,8 @@ bool specialmonitor_linebased(void);
 void genlock_infotext(uae_u8*, struct vidbuffer*);
 void genlock_serial_control(uae_u8 pra, uae_u8 dra);
 void genlock_fader_bplcon0(uae_u16 v, int vpos);
+void genlock_set_keying(bool on, const TCHAR *why);
+bool genlock_get_keying(void);
 
 void specialmonitor_store_fmode(int vpos, int hpos, uae_u16 fmode);
 void specialmonitor_data(uae_u16, int);

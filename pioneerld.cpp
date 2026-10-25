@@ -33,6 +33,7 @@
 #include <algorithm>
 #ifdef VIDEOGRAB
 #include "videograb.h"
+#include "specialmonitors.h"
 #endif
 
 int log_pioneerld = 1;
@@ -340,15 +341,13 @@ static uae_s64 timecode_to_frame(const char *digits, int len)
 static void pioneerld_vsync(void)
 {
 	/* A genlock only keys once there is something to key to. custom_reset()
-	 * clears genlock on a cold boot so the unit comes up showing the Amiga's
-	 * own screen in its own colours, and the player turns it back on when the
+	 * stops it keying on a cold boot so the unit comes up showing the Amiga's
+	 * own screen in its own colours, and the player starts it keying when the
 	 * disc spins up - which is the moment a real unit has video on the loop
 	 * through. BPLCON0 ERSY is no good as the trigger here: the Sneak boot
 	 * sets it seconds before the player exists. */
-	if (ld_spun_up && !currprefs.genlock) {
-		changed_prefs.genlock = currprefs.genlock = 1;
-		if (log_pioneerld)
-			write_log(_T("PIONEERLD: disc running, enabling Genlock\n"));
+	if (ld_spun_up && !genlock_get_keying()) {
+		genlock_set_keying(true, _T("PIONEERLD disc running"));
 	}
 #ifdef VIDEOGRAB
 	/* Anything outside the player may put the graph back into Run: the big
