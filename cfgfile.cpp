@@ -8583,6 +8583,11 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 	reset_inputdevice_config (p, reset);
 	memset (p, 0, sizeof (*p));
 	_tcscpy (p->description, _T("UAE default configuration"));
+#ifdef GDBSERVER
+	// Configs saved before gdb_port existed never set it, and the memset
+	// above would leave it 0: the server would then never listen.
+	p->gdb_port = 2345;
+#endif
 	p->config_hardware_path[0] = 0;
 	p->config_host_path[0] = 0;
 
