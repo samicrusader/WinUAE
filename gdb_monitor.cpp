@@ -24,6 +24,7 @@
 #include "gdb_input.h"
 #include "gdb_output.h"
 #include "gdb_watch.h"
+#include "disk.h"
 #include <algorithm>
 
 using winuae_gdb::MonitorResult;
@@ -104,6 +105,7 @@ private:
 	MonitorResult checkpoint_command(const std::string& command, std::string& result);
 	MonitorResult task_command(const std::string& command, std::string& result);
 	MonitorResult input_command(const std::string& command, std::string& result);
+	MonitorResult media_command(const std::string& command, std::string& result);
 };
 
 bool GdbMonitor::read(uint32_t address, uint8_t* bytes, size_t length)
@@ -184,7 +186,8 @@ bool GdbMonitor::screenshot(const std::string& path)
 
 bool GdbMonitor::monitor_running(const std::string& command)
 {
-	return command == "capabilities" || command == "execution-status" || command.compare(0, 6, "input ") == 0;
+	return command == "capabilities" || command == "execution-status" || command.compare(0, 6, "input ") == 0 ||
+		command == "warp" || command.compare(0, 5, "warp ") == 0 || command.compare(0, 6, "floppy") == 0;
 }
 
 MonitorResult GdbMonitor::monitor(const std::string& command, std::string& result)
@@ -199,6 +202,7 @@ MonitorResult GdbMonitor::monitor(const std::string& command, std::string& resul
 		&GdbMonitor::checkpoint_command,
 		&GdbMonitor::task_command,
 		&GdbMonitor::input_command,
+		&GdbMonitor::media_command,
 	};
 	for (auto handler : handlers) {
 		auto status = (this->*handler)(command, result);
@@ -222,6 +226,7 @@ MonitorResult GdbMonitor::status_command(const std::string& command, std::string
 #endif
 		commands += ",\"tasks\",\"history\",\"condition\",\"step-over\"";
 		commands += ",\"input\",\"input-sequence\"";
+		commands += ",\"warp\",\"floppy\"";
 		result = "{\"protocol\":1,\"cpu_model\":" + std::to_string(currprefs.cpu_model) +
 			",\"mmu_model\":" + std::to_string(currprefs.mmu_model) +
 			",\"memory_addressing\":\"physical\",\"commands\":[" + commands +
@@ -903,4 +908,72 @@ void gdb_server_guest_output(const char* text, bool truncated)
 {
 	gdb_monitor.guest_output.capture(text, truncated);
 }
+
+// Host-side media and speed controls. Like input, these may run while the
+// guest runs: both only queue work the emulation thread picks up itself.
+MonitorResult GdbMonitor::media_command(const std::string& command, std::string& result)
+{
+	if (command == "warp" || command.compare(0, 5, "warp ") == 0) {
+		std::string arg = command.size() > 5 ? command.substr(5) : "";
+		if (arg == "on")
+			warpmode(1);
+		else if (arg == "off")
+			warpmode(0);
+		else if (arg == "toggle")
+			warpmode(-1);
+		else if (!arg.empty())
+			return MonitorResult::error;
+		result = std::string("{\"warp\":") + (currprefs.turbo_emulation ? "true" : "false") + "}";
+		return MonitorResult::ok;
+	}
+	if (command != "floppy" && command.compare(0, 7, "floppy ") != 0)
+		return MonitorResult::unsupported;
+	std::string arg = command.size() > 7 ? command.substr(7) : "status";
+	if (arg == "status") {
+		result = "{\"drives\":[";
+		for (int i = 0; i < 4; i++) {
+			const struct floppyslot& fs = currprefs.floppyslots[i];
+			char* name = uutf8(fs.df);
+			if (i)
+				result += ",";
+			result += "{\"drive\":" + std::to_string(i) + ",\"enabled\":" + (fs.dfxtype >= 0 ? "true" : "false") +
+				",\"path\":" + json_string(name ? name : "") + "}";
+			xfree(name);
+		}
+		result += "]}";
+		return MonitorResult::ok;
+	}
+	// floppy eject N | floppy insert N <native path, may contain spaces>
+	bool insert = arg.compare(0, 7, "insert ") == 0;
+	if (!insert && arg.compare(0, 6, "eject ") != 0)
+		return MonitorResult::error;
+	std::string rest = arg.substr(insert ? 7 : 6);
+	if (rest.empty() || rest[0] < '0' || rest[0] > '3' || (rest.size() > 1 && rest[1] != ' '))
+		return MonitorResult::error;
+	int drive = rest[0] - '0';
+	if (currprefs.floppyslots[drive].dfxtype < 0)
+		return MonitorResult::error;
+	if (!insert) {
+		if (rest.size() != 1)
+			return MonitorResult::error;
+		disk_eject(drive);
+		result = "{\"drive\":" + std::to_string(drive) + ",\"ejected\":true}";
+		return MonitorResult::ok;
+	}
+	if (rest.size() < 3)
+		return MonitorResult::error;
+	std::string path = rest.substr(2);
+	TCHAR* filename = utf8u(path.c_str());
+	if (!filename)
+		return MonitorResult::error;
+	bool ok = _tcslen(filename) < MAX_DPATH && zfile_exists(filename);
+	if (ok)
+		disk_insert(drive, filename);
+	xfree(filename);
+	if (!ok)
+		return MonitorResult::error;
+	result = "{\"drive\":" + std::to_string(drive) + ",\"path\":" + json_string(path) + "}";
+	return MonitorResult::ok;
+}
+
 #endif
