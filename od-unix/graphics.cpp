@@ -433,7 +433,11 @@ void show_screen(int monid, int)
     }
 
     struct vidbuf_description *vidinfo = &adisplays[monid].gfxvidinfo;
-    struct vidbuffer *vb = vidinfo->inbuffer ? vidinfo->inbuffer : &vidinfo->drawbuffer;
+    // The finished frame is outbuffer: with genlock or a special monitor the
+    // core draws the Amiga picture into inbuffer (tempbuffer) and composites
+    // into outbuffer, so presenting inbuffer showed the picture uncomposited.
+    struct vidbuffer *vb = vidinfo->outbuffer ? vidinfo->outbuffer :
+        (vidinfo->inbuffer ? vidinfo->inbuffer : &vidinfo->drawbuffer);
     if (!vb->bufmem || vb->outwidth <= 0 || vb->outheight <= 0) {
         return;
     }

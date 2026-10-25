@@ -535,7 +535,10 @@ static bool unix_prepare_active_screenshot(int monid, struct vidbuffer *prepared
         monid = 0;
     }
     struct vidbuf_description *vidinfo = &adisplays[monid].gfxvidinfo;
-    struct vidbuffer *vb = vidinfo->inbuffer ? vidinfo->inbuffer : &vidinfo->drawbuffer;
+    // outbuffer is the composited frame the window shows (genlock, special
+    // monitors); inbuffer is the raw Amiga picture.
+    struct vidbuffer *vb = vidinfo->outbuffer ? vidinfo->outbuffer :
+        (vidinfo->inbuffer ? vidinfo->inbuffer : &vidinfo->drawbuffer);
     if (!vb || !vb->bufmem || vb->outwidth <= 0 || vb->outheight <= 0) {
         write_log(_T("Unix screenshot: no active video buffer\n"));
         return false;

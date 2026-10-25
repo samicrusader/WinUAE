@@ -214,7 +214,9 @@ static bool prepare_video_frame(int monid, std::vector<uae_u8> *frame, int *widt
     }
 
     struct vidbuf_description *vidinfo = &adisplays[monid].gfxvidinfo;
-    struct vidbuffer *vb = vidinfo->inbuffer ? vidinfo->inbuffer : &vidinfo->drawbuffer;
+    // Record what is displayed: outbuffer carries the genlock composite.
+    struct vidbuffer *vb = vidinfo->outbuffer ? vidinfo->outbuffer :
+        (vidinfo->inbuffer ? vidinfo->inbuffer : &vidinfo->drawbuffer);
     if (!vb || !vb->bufmem || vb->outwidth <= 0 || vb->outheight <= 0 || vb->rowbytes <= 0) {
         return false;
     }
