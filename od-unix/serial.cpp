@@ -44,6 +44,7 @@ static bool serempty_enabled;
 static bool rx_full;
 static bool rx_irq;
 static bool ovrun;
+static int rx_wait_hsyncs;
 static bool dtr;
 static bool telnet_iac;
 static int telnet_skip;
@@ -164,6 +165,11 @@ static bool tcp_accept_pending(void)
 	set_nonblock(fd);
 	int one = 1;
 	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+#ifdef SO_NOSIGPIPE
+	// A write after the client hung up must fail with EPIPE, not raise
+	// SIGPIPE: its default action silently ends the whole emulator.
+	setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
+#endif
 	conn_fd = fd;
 	telnet_iac = false;
 	telnet_skip = 0;
@@ -432,7 +438,12 @@ void writeser(int c)
 {
 	unsigned char b = (unsigned char)c;
 	if (tcpserial) {
-		if (tcp_accept_pending() && send(conn_fd, &b, 1, 0) != 1) {
+#ifdef MSG_NOSIGNAL
+		const int sendflags = MSG_NOSIGNAL;
+#else
+		const int sendflags = 0;
+#endif
+		if (tcp_accept_pending() && send(conn_fd, &b, 1, sendflags) != 1) {
 			tcp_disconnect();
 		}
 		return;
@@ -533,9 +544,22 @@ static void serial_rx_irq(void)
 	INTREQ_INT(11, 0);
 }
 
+// Scanlines one character occupies on the wire at the current SERPER:
+// start + 8 or 9 data + stop bits, each (SERPER & 0x7fff) + 1 colour clocks.
+static int serial_char_hsyncs(void)
+{
+	const int bits = (serper & 0x8000) ? 11 : 10;
+	const int clocks = ((serper & 0x7fff) + 1) * bits;
+	const int lines = maxhpos > 0 ? clocks / maxhpos : 0;
+	return lines > 0 ? lines : 1;
+}
+
 static void checkreceive_serial(void)
 {
-	if (rx_full) {
+	// Pace input to the baud rate, like a real line: a host feeding faster
+	// than that (a TCP client sends a whole frame at once) must not hand the
+	// Amiga a byte every scanline.
+	if (rx_wait_hsyncs > 0) {
 		return;
 	}
 	int recdata;
@@ -550,8 +574,15 @@ static void checkreceive_serial(void)
 		}
 		previous = recdata;
 	}
+	// Like Paula, a new character replaces one that was never read and sets
+	// OVRUN, with RBF raised again. Holding it back instead deadlocked the
+	// receiver whenever software acknowledged RBF without reading SERDATR.
+	if (rx_full) {
+		ovrun = true;
+	}
 	serdatr = (uae_u16)((recdata & 0xff) | 0x0100);
 	serial_rx_irq();
+	rx_wait_hsyncs = serial_char_hsyncs();
 }
 
 void SERPER(uae_u16 w)
@@ -707,6 +738,9 @@ void serial_rethink(void)
 
 void serial_hsynchandler(void)
 {
+	if (rx_wait_hsyncs > 0) {
+		rx_wait_hsyncs--;
+	}
 	checkreceive_serial();
 }
 
