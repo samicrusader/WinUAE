@@ -4499,6 +4499,9 @@ void target_default_options (struct uae_prefs *p, int type)
 		p->win32_capture_always = false;
 		p->win32_start_minimized = false;
 		p->win32_start_uncaptured = false;
+		// This build is driven from outside (gdbserver, MCP) more than played,
+		// so it leaves the mouse and keyboard alone unless asked to.
+		p->win32_auto_capture_input = false;
 		p->win32_active_capture_priority = 1;
 		//p->win32_active_nocapture_priority = 1;
 		p->win32_inactive_priority = 2;
@@ -4609,6 +4612,7 @@ void target_save_options (struct zfile *f, struct uae_prefs *p)
 	cfgfile_target_dwrite_bool(f, _T("active_capture_automatically"), p->win32_capture_always);
 	cfgfile_target_dwrite_bool(f, _T("start_iconified"), p->win32_start_minimized);
 	cfgfile_target_dwrite_bool(f, _T("start_not_captured"), p->win32_start_uncaptured);
+	cfgfile_target_dwrite_bool(f, _T("auto_capture_input"), p->win32_auto_capture_input);
 	cfgfile_target_dwrite_bool(f, _T("gui_control"), p->win32_gui_control);
 
 	cfgfile_target_dwrite_bool (f, _T("ctrl_f11_is_quit"), p->win32_ctrl_F11_is_quit);
@@ -5013,6 +5017,8 @@ static int target_parse_option_host(struct uae_prefs *p, const TCHAR *option, co
 		return 1;
 
 	if (cfgfile_yesno(option, value, _T("start_not_captured"), &p->win32_start_uncaptured))
+		return 1;
+	if (cfgfile_yesno(option, value, _T("auto_capture_input"), &p->win32_auto_capture_input))
 		return 1;
 
 	if (cfgfile_yesno(option, value, _T("gui_control"), &p->win32_gui_control))

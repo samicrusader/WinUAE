@@ -914,6 +914,9 @@ struct uae_prefs {
 	int win32_statusbar;
 	bool win32_start_minimized;
 	bool win32_start_uncaptured;
+	// false: never take the user's mouse and keyboard on our own (window open,
+	// debugger stop/resume, background raw input); they capture by clicking in.
+	bool win32_auto_capture_input;
 
 	int win32_active_capture_priority;
 	bool win32_active_nocapture_pause;

@@ -8547,10 +8547,10 @@ void debug (void)
 		debugging = -1;
 	}
 	resume_sound ();
-	// With the gdbserver attached, a stop/resume must not grab the user's
-	// mouse and keyboard or pull the window to the foreground. Capture comes
-	// back the normal way, by clicking in the window.
-	if (!(currprefs.debugging_features & (1 << 2))) {
+	// Unless win32.auto_capture_input is set, a debugger stop/resume must not
+	// grab the user's mouse and keyboard or pull the window to the foreground.
+	// Capture comes back the normal way, by clicking in the window.
+	if (currprefs.win32_auto_capture_input) {
 		inputdevice_acquire (TRUE);
 #ifdef WITH_PPC
 		uae_ppc_pause(0);

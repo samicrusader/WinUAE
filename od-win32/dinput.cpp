@@ -411,9 +411,10 @@ static int doregister_rawinput(void)
 	if (!rawinput_available)
 		return 0;
 
-	// With the gdbserver attached, don't sink input while in the background and
-	// don't swallow Windows hotkeys: only deliver raw input while focused.
-	const bool dbgnocapture = (currprefs.debugging_features & (1 << 2)) != 0;
+	// Unless win32.auto_capture_input is set, don't sink input while in the
+	// background and don't swallow Windows hotkeys: only deliver raw input
+	// while focused.
+	const bool dbgnocapture = !currprefs.win32_auto_capture_input;
 	const DWORD sinkflag = dbgnocapture ? 0 : RIDEV_INPUTSINK;
 	const DWORD nohotkeysflag = dbgnocapture ? 0 : RIDEV_NOHOTKEYS;
 

@@ -1924,12 +1924,13 @@ static int open_windows(struct AmigaMonitor *mon, bool mousecapture, bool starte
 	bool startminimized = !started && currprefs.win32_start_minimized && isfullscreen() <= 0;
 	int input = 0;
 
-	// A gdbserver session is driven from outside rather than played, so taking the
-	// mouse when the window opens warps the user's pointer to the centre of the
-	// WinUAE window and then clips it there. active=-1 means 'restore the previous
-	// capture state', but from mouseactive==0 it captures anyway. Leave it alone and
-	// let them click into the window when they do want to drive the machine.
-	bool dbgnocapture = (currprefs.debugging_features & (1 << 2)) != 0;
+	// Taking the mouse when the window opens warps the user's pointer to the
+	// centre of the WinUAE window and clips it there, which is no good when the
+	// machine is driven from outside (gdbserver, MCP) and the user is typing
+	// elsewhere. active=-1 means 'restore the previous capture state', but from
+	// mouseactive==0 it captures anyway. Unless win32.auto_capture_input is set,
+	// leave it alone and let them click into the window to drive the machine.
+	bool dbgnocapture = !currprefs.win32_auto_capture_input;
 	if (((mousecapture && startactive) || recapture) && !dbgnocapture)
 		setmouseactive(mon->monitor_id, -1);
 
