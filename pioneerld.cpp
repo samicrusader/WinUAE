@@ -431,7 +431,22 @@ static void pioneerld_vsync(void)
 		if (log_pioneerld)
 			write_log(_T("PIONEERLD: stop marker %lld reached\n"), ld_mark);
 		set_mode(LD_P_STILL);
-	} else if (ld_stop_target && ld_frame >= ld_stop_target) {
+	} else if (ld_stop_target && ld_frame >= ld_stop_target &&
+		   !(ld_mark_set && ld_mark > ld_stop_target)) {
+		/* An armed marker BEYOND this stop means vd has explicitly asked to
+		 * play past it, so the stop must not fire -- this is the "a marker
+		 * always wins" rule the comment above has always claimed and the code
+		 * never implemented (both arrived together in dfaa1a25; the else-if
+		 * only let the marker win when it happened to come first).
+		 *
+		 * Needed because the disc is addressed two ways over the same frames.
+		 * Observed 2026-10-26: DD has ThePrinc110 AND ThePrinc:G:001 both at
+		 * 61480, with Ghostsof111 at 61940. vd asked for 61480..62380 -- the
+		 * long :G: variant -- and our legitimate stop at 61940 truncated it
+		 * 440 frames early; vd then re-seeked and replayed with 61930SM to
+		 * work around us. No static stop table can serve both the short and
+		 * the long play of the same frames, but vd's own marker carries the
+		 * intent the table cannot express. */
 		/* No marker for this segment, so on the real disc it ended on a
 		 * picture stop pressed into the vertical interval. A capture has no
 		 * VBI, so stop at the segment boundary the disc directory gives us.
