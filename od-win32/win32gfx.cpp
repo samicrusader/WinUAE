@@ -2542,6 +2542,11 @@ int check_prefs_changed_gfx(void)
 			serial_init ();
 #endif
 	}
+	if (currprefs.serial_ctsfeed != changed_prefs.serial_ctsfeed ||
+		_tcscmp(currprefs.serial_ctsfeed_listen, changed_prefs.serial_ctsfeed_listen)) {
+			currprefs.serial_ctsfeed = changed_prefs.serial_ctsfeed;
+			_tcscpy(currprefs.serial_ctsfeed_listen, changed_prefs.serial_ctsfeed_listen);
+	}
 	if (currprefs.win32_midiindev != changed_prefs.win32_midiindev ||
 		currprefs.win32_midioutdev != changed_prefs.win32_midioutdev ||
 		currprefs.win32_midirouter != changed_prefs.win32_midirouter)

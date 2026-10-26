@@ -833,8 +833,106 @@ static void serdatcopy(void)
 }
 
 
+/* CTS line feed. Bytes from a TCP listener (parser.cpp) are clocked out on the
+   CTS input as 110 baud 8N1 in emulated time: start bit = CTS asserted, data
+   bits LSB first with 0 = asserted, stop bit and idle = CTS released. This is
+   the waveform a receiver that bit-bangs CTS expects (EPG Esquire's 110-baud
+   CTRL link), and it stays in step with the emulation in warp mode too. */
+#define CTSFEED_BAUD 110
+static bool ctsfeed_on;
+static TCHAR ctsfeed_cur[256];
+static bool ctsfeed_asserted;
+static int ctsfeed_bit = -1; // -1 idle, 0 start, 1..8 data, 9 stop
+static uae_u8 ctsfeed_byte;
+static uae_u64 ctsfeed_acc;
+static uae_u8 ctsfeed_buf[512];
+static int ctsfeed_len, ctsfeed_pos;
+static int ctsfeed_poll;
+
+static void ctsfeed_reset(void)
+{
+	ctsfeed_close();
+	ctsfeed_on = false;
+	ctsfeed_cur[0] = 0;
+	ctsfeed_asserted = false;
+	ctsfeed_bit = -1;
+	ctsfeed_len = ctsfeed_pos = 0;
+	ctsfeed_acc = 0;
+	ctsfeed_poll = 0;
+}
+
+// load the next byte and start its start bit; false if there is none
+static bool ctsfeed_next(void)
+{
+	if (ctsfeed_pos >= ctsfeed_len) {
+		ctsfeed_pos = 0;
+		ctsfeed_len = ctsfeed_read(ctsfeed_buf, sizeof ctsfeed_buf);
+		if (ctsfeed_len <= 0) {
+			ctsfeed_len = 0;
+			return false;
+		}
+	}
+	ctsfeed_byte = ctsfeed_buf[ctsfeed_pos++];
+	ctsfeed_bit = 0;
+	ctsfeed_asserted = true;
+	return true;
+}
+
+static void ctsfeed_hsync(void)
+{
+	if (currprefs.serial_ctsfeed != ctsfeed_on || (ctsfeed_on && _tcscmp(ctsfeed_cur, currprefs.serial_ctsfeed_listen))) {
+		ctsfeed_reset();
+		if (currprefs.serial_ctsfeed) {
+			ctsfeed_on = true;
+			_tcscpy(ctsfeed_cur, currprefs.serial_ctsfeed_listen);
+			ctsfeed_open(ctsfeed_cur);
+		}
+	}
+	if (!ctsfeed_on)
+		return;
+	if (ctsfeed_bit < 0) {
+		// idle: poll the socket about once a millisecond
+		if (ctsfeed_pos >= ctsfeed_len && ++ctsfeed_poll < 16)
+			return;
+		ctsfeed_poll = 0;
+		ctsfeed_acc = 0;
+		ctsfeed_next();
+		return;
+	}
+	// exact bit period in colour clocks: advance when acc reaches the chipset clock
+	uae_u64 hz = currprefs.ntscmode ? CHIPSET_CLOCK_NTSC : CHIPSET_CLOCK_PAL;
+	ctsfeed_acc += (uae_u64)maxhpos * CTSFEED_BAUD;
+	if (ctsfeed_acc < hz)
+		return;
+	ctsfeed_acc -= hz;
+	ctsfeed_bit++;
+	if (ctsfeed_bit <= 8) {
+		ctsfeed_asserted = ((ctsfeed_byte >> (ctsfeed_bit - 1)) & 1) == 0;
+	} else if (ctsfeed_bit == 9) {
+		ctsfeed_asserted = false;
+	} else if (!ctsfeed_next()) {
+		ctsfeed_bit = -1;
+		ctsfeed_asserted = false;
+	}
+}
+
+// emulator shutdown (devices.cpp); a settings change is picked up by ctsfeed_hsync
+void serial_ctsfeed_free(void)
+{
+	ctsfeed_reset();
+}
+
+// CIA-B PRA bit 4 is /CTS: 0 = asserted
+static uae_u8 ctsfeed_status(uae_u8 v)
+{
+	if (!ctsfeed_on)
+		return v;
+	return ctsfeed_asserted ? (v & ~0x10) : (v | 0x10);
+}
+
 void serial_hsynchandler (void)
 {
+	ctsfeed_hsync();
 #ifdef AHI
 	extern void hsyncstuff(void);
 	hsyncstuff();
@@ -1176,7 +1274,7 @@ uae_u8 serial_readstatus(uae_u8 v, uae_u8 dir)
 		getserstat(&status);
 #endif
 	} else {
-		return v;
+		return ctsfeed_status(v);
 	}
 
 	if (currprefs.serial_rtsctsdtrdtecd) {
@@ -1253,7 +1351,7 @@ uae_u8 serial_readstatus(uae_u8 v, uae_u8 dir)
 	serial_status_debug (_T("read"));
 
 	v = (v & (0x80 | 0x40 | 0x02 | 0x01)) | serbits;
-	return v;
+	return ctsfeed_status(v);
 }
 
 uae_u8 serial_writestatus (uae_u8 newstate, uae_u8 dir)

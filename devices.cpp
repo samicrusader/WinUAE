@@ -407,6 +407,9 @@ void virtualdevice_free(void)
 	dump_counts();
 #ifdef SERIAL_PORT
 	serial_exit();
+#ifdef _WIN32
+	serial_ctsfeed_free();
+#endif
 #endif
 #ifdef AUTOCONFIG
 	expansion_cleanup();

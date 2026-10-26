@@ -2224,6 +2224,8 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 	cfgfile_write_bool (f, _T("serial_direct"), p->serial_direct);
 	cfgfile_dwrite (f, _T("serial_stopbits"), _T("%d"), p->serial_stopbits);
 	cfgfile_dwrite_strarr(f, _T("serial_translate"), serialcrlf, p->serial_crlf);
+	cfgfile_dwrite_bool(f, _T("serial_cts_feed"), p->serial_ctsfeed);
+	cfgfile_dwrite_str(f, _T("serial_cts_feed_listen"), p->serial_ctsfeed_listen);
 	cfgfile_write_strarr (f, _T("scsi"), scsimode, p->scsi);
 	cfgfile_write_bool (f, _T("uaeserial"), p->uaeserial);
 	cfgfile_write_bool (f, _T("sana2"), p->sana2);
@@ -6118,6 +6120,8 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_yesno(option, value, _T("serial_on_demand"), &p->serial_demand)
 		|| cfgfile_yesno(option, value, _T("serial_hardware_ctsrts"), &p->serial_hwctsrts)
 		|| cfgfile_yesno(option, value, _T("serial_status"), &p->serial_rtsctsdtrdtecd)
+		|| cfgfile_yesno(option, value, _T("serial_cts_feed"), &p->serial_ctsfeed)
+		|| cfgfile_string(option, value, _T("serial_cts_feed_listen"), p->serial_ctsfeed_listen, sizeof p->serial_ctsfeed_listen / sizeof(TCHAR))
 		|| cfgfile_yesno(option, value, _T("serial_ri"), &p->serial_ri)
 		|| cfgfile_yesno(option, value, _T("serial_direct"), &p->serial_direct)
 		|| cfgfile_yesno(option, value, _T("fpu_strict"), &p->fpu_strict)
@@ -8634,6 +8638,8 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 	p->serial_ri = false;
 	p->serial_rtsctsdtrdtecd = true;
 	p->serial_stopbits = 0;
+	p->serial_ctsfeed = false;
+	_tcscpy(p->serial_ctsfeed_listen, _T("0.0.0.0:1235"));
 	p->parallel_demand = 0;
 	p->parallel_matrix_emulation = 0;
 	p->parallel_postscript_emulation = 0;

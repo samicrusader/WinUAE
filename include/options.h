@@ -553,6 +553,8 @@ struct uae_prefs {
 	bool serial_direct;
 	int serial_stopbits;
 	int serial_crlf;
+	bool serial_ctsfeed;
+	TCHAR serial_ctsfeed_listen[256];
 	bool parallel_demand;
 	int parallel_matrix_emulation;
 	bool parallel_postscript_emulation;

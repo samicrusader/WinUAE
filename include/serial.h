@@ -14,6 +14,9 @@
 
 extern void serial_init (void);
 extern void serial_exit (void);
+#ifdef _WIN32
+extern void serial_ctsfeed_free(void);
+#endif
 extern void serial_dtr_off (void);
 extern void serial_dtr_on (void);
 

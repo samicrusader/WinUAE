@@ -18300,6 +18300,62 @@ static void enable_for_gameportsdlg (HWND hDlg)
 	ew (hDlg, IDC_PORT_TABLET_CURSOR, v && workprefs.input_tablet > 0);
 }
 
+// [TCP://]host:port[/wait] -> host, port, wait flag; defaults for missing parts
+static void ser_tcp_split(const TCHAR *s, TCHAR *addr, int addrsize, TCHAR *port, int portsize, bool *wait, const TCHAR *defport)
+{
+	TCHAR tmp[256];
+	TCHAR *p;
+
+	if (!_tcsnicmp(s, _T("TCP://"), 6))
+		s += 6;
+	else if (!_tcsnicmp(s, _T("TCP:"), 4))
+		s += 4;
+	_tcsncpy(tmp, s, 255);
+	tmp[255] = 0;
+	if (wait)
+		*wait = false;
+	p = _tcschr(tmp, '/');
+	if (p) {
+		if (wait && !_tcsicmp(p + 1, _T("wait")))
+			*wait = true;
+		*p = 0;
+	}
+	_tcsncpy(port, defport, portsize - 1);
+	port[portsize - 1] = 0;
+	p = _tcsrchr(tmp, ':');
+	if (p) {
+		*p++ = 0;
+		if (*p) {
+			_tcsncpy(port, p, portsize - 1);
+			port[portsize - 1] = 0;
+		}
+	}
+	_tcsncpy(addr, tmp[0] ? tmp : _T("0.0.0.0"), addrsize - 1);
+	addr[addrsize - 1] = 0;
+}
+
+static void ser_tcp_join(HWND hDlg, int addrid, int portid, const TCHAR *defport, const TCHAR *prefix, const TCHAR *suffix, TCHAR *out, int outsize)
+{
+	TCHAR addr[200], port[32];
+
+	TCHAR *p;
+	int n;
+
+	addr[0] = port[0] = 0;
+	GetDlgItemText(hDlg, addrid, addr, sizeof addr / sizeof(TCHAR));
+	GetDlgItemText(hDlg, portid, port, sizeof port / sizeof(TCHAR));
+	p = _tcspbrk(addr, _T(":/ "));
+	if (p)
+		*p = 0;
+	n = _tstoi(port);
+	if (n < 1 || n > 65535)
+		_tcscpy(port, defport);
+	else
+		_stprintf(port, _T("%d"), n);
+	_sntprintf(out, outsize, _T("%s%s:%s%s"), prefix, addr[0] ? addr : _T("0.0.0.0"), port, suffix);
+	out[outsize - 1] = 0;
+}
+
 static void enable_for_portsdlg (HWND hDlg)
 {
 	int v;
@@ -18317,8 +18373,22 @@ static void enable_for_portsdlg (HWND hDlg)
 	ew(hDlg, IDC_SERIAL_DIRECT, FALSE);
 	ew(hDlg, IDC_SERIAL, FALSE);
 	ew(hDlg, IDC_UAESERIAL, FALSE);
+	ew(hDlg, IDC_SER_TCP_ADDR, FALSE);
+	ew(hDlg, IDC_SER_TCP_PORT, FALSE);
+	ew(hDlg, IDC_SER_TCP_WAIT, FALSE);
+	ew(hDlg, IDC_SER_CTSFEED, FALSE);
+	ew(hDlg, IDC_SER_CTSFEED_ADDR, FALSE);
+	ew(hDlg, IDC_SER_CTSFEED_PORT, FALSE);
 #else
 	v = workprefs.use_serial ? TRUE : FALSE;
+	{
+		bool tcp = workprefs.use_serial && !_tcsncmp(workprefs.sername, _T("TCP:"), 4);
+		ew(hDlg, IDC_SER_TCP_ADDR, tcp);
+		ew(hDlg, IDC_SER_TCP_PORT, tcp);
+		ew(hDlg, IDC_SER_TCP_WAIT, tcp);
+		ew(hDlg, IDC_SER_CTSFEED_ADDR, workprefs.serial_ctsfeed);
+		ew(hDlg, IDC_SER_CTSFEED_PORT, workprefs.serial_ctsfeed);
+	}
 	ew(hDlg, IDC_SER_SHARED, v);
 	ew(hDlg, IDC_SER_CTSRTS, v);
 	ew(hDlg, IDC_SER_RTSCTSDTRDTECD, v);
@@ -18636,7 +18706,12 @@ static void values_from_portsdlg (HWND hDlg)
 	item = xSendDlgItemMessage (hDlg, IDC_SERIAL, CB_GETCURSEL, 0, 0L);
 	if (item != CB_ERR && item > 0) {
 		workprefs.use_serial = 1;
-		_tcscpy (workprefs.sername, comports[item - 1]->dev);
+		if (!_tcsncmp(comports[item - 1]->dev, _T("TCP:"), 4)) {
+			ser_tcp_join(hDlg, IDC_SER_TCP_ADDR, IDC_SER_TCP_PORT, _T("1234"), _T("TCP://"),
+				ischecked(hDlg, IDC_SER_TCP_WAIT) ? _T("/wait") : _T(""), workprefs.sername, sizeof workprefs.sername / sizeof(TCHAR));
+		} else {
+			_tcscpy (workprefs.sername, comports[item - 1]->dev);
+		}
 	} else {
 		workprefs.use_serial = 0;
 		workprefs.sername[0] = 0;
@@ -18647,6 +18722,9 @@ static void values_from_portsdlg (HWND hDlg)
 	workprefs.serial_ri = ischecked(hDlg, IDC_SER_RI);
 	workprefs.serial_crlf = ischecked(hDlg, IDC_SER_CRLF);
 	workprefs.serial_direct = ischecked(hDlg, IDC_SER_DIRECT);
+	workprefs.serial_ctsfeed = ischecked(hDlg, IDC_SER_CTSFEED);
+	ser_tcp_join(hDlg, IDC_SER_CTSFEED_ADDR, IDC_SER_CTSFEED_PORT, _T("1235"), _T(""), _T(""),
+		workprefs.serial_ctsfeed_listen, sizeof workprefs.serial_ctsfeed_listen / sizeof(TCHAR));
 
 	workprefs.uaeserial = ischecked(hDlg, IDC_UAESERIAL);
 
@@ -18724,6 +18802,23 @@ static void values_to_portsdlg (HWND hDlg)
 	CheckDlgButton(hDlg, IDC_SER_RI, workprefs.serial_ri);
 	CheckDlgButton(hDlg, IDC_SER_CRLF, workprefs.serial_crlf);
 	CheckDlgButton(hDlg, IDC_SER_DIRECT, workprefs.serial_direct);
+	{
+		TCHAR addr[200], port[32];
+		bool wait;
+		ser_tcp_split(!_tcsncmp(workprefs.sername, _T("TCP:"), 4) ? workprefs.sername : _T(""),
+			addr, sizeof addr / sizeof(TCHAR), port, sizeof port / sizeof(TCHAR), &wait, _T("1234"));
+		SetDlgItemText(hDlg, IDC_SER_TCP_ADDR, addr);
+		SetDlgItemText(hDlg, IDC_SER_TCP_PORT, port);
+		CheckDlgButton(hDlg, IDC_SER_TCP_WAIT, wait);
+		ser_tcp_split(workprefs.serial_ctsfeed_listen, addr, sizeof addr / sizeof(TCHAR), port, sizeof port / sizeof(TCHAR), NULL, _T("1235"));
+		SetDlgItemText(hDlg, IDC_SER_CTSFEED_ADDR, addr);
+		SetDlgItemText(hDlg, IDC_SER_CTSFEED_PORT, port);
+		CheckDlgButton(hDlg, IDC_SER_CTSFEED, workprefs.serial_ctsfeed);
+		SendDlgItemMessage(hDlg, IDC_SER_TCP_ADDR, EM_LIMITTEXT, 199, 0);
+		SendDlgItemMessage(hDlg, IDC_SER_TCP_PORT, EM_LIMITTEXT, 5, 0);
+		SendDlgItemMessage(hDlg, IDC_SER_CTSFEED_ADDR, EM_LIMITTEXT, 199, 0);
+		SendDlgItemMessage(hDlg, IDC_SER_CTSFEED_PORT, EM_LIMITTEXT, 5, 0);
+	}
 
 	if(!workprefs.sername[0])  {
 		xSendDlgItemMessage (hDlg, IDC_SERIAL, CB_SETCURSEL, 0, 0L);
@@ -18733,18 +18828,9 @@ static void values_to_portsdlg (HWND hDlg)
 		LRESULT result = -1;
 		for (i = 0; i < MAX_SERPAR_PORTS && comports[i]; i++) {
 			if (!_tcsncmp (workprefs.sername, _T("TCP:"), 4) && !_tcsncmp (comports[i]->dev, workprefs.sername, 4)) {
-				const TCHAR *p1 = _tcschr(workprefs.sername + 4, ':');
-				const TCHAR *p2 = _tcschr(comports[i]->dev + 4, ':');
-				if (p1) {
-					p1 = _tcschr(p1 + 1, '/');
-				}
-				if (p2) {
-					p2 = _tcschr(p2 + 1, '/');
-				}
-				if ((p1 == NULL && p2 == NULL) || (p1 && p2 && !_tcsicmp(p1, p2))) {
-					result = xSendDlgItemMessage (hDlg, IDC_SERIAL, CB_SETCURSEL, i + 1, 0L);
-					break;
-				}
+				// address, port and /wait live in their own fields
+				result = xSendDlgItemMessage (hDlg, IDC_SERIAL, CB_SETCURSEL, i + 1, 0L);
+				break;
 			} else {
 				if (!_tcscmp (comports[i]->dev, workprefs.sername) || (!_tcsncmp (workprefs.sername, _T("TCP:"), 4) && !_tcsncmp (comports[i]->dev, workprefs.sername, 4))) {
 					result = xSendDlgItemMessage (hDlg, IDC_SERIAL, CB_SETCURSEL, i + 1, 0L);
@@ -19190,7 +19276,12 @@ static INT_PTR CALLBACK IOPortsDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPAR
 				closeprinter ();
 			}
 		} else if (wParam == IDC_UAESERIAL || wParam == IDC_SER_SHARED || wParam == IDC_SER_DIRECT || wParam == IDC_SER_CTSRTS || wParam == IDC_SER_RTSCTSDTRDTECD || wParam == IDC_SER_RI ||
-			wParam == IDC_SER_CRLF || wParam == IDC_PRINTERAUTOFLUSH || wParam == IDC_SAMPLER_STEREO || wParam == IDC_MIDIROUTER) {
+			wParam == IDC_SER_CRLF || wParam == IDC_PRINTERAUTOFLUSH || wParam == IDC_SAMPLER_STEREO || wParam == IDC_MIDIROUTER ||
+			wParam == IDC_SER_TCP_WAIT || wParam == IDC_SER_CTSFEED) {
+			values_from_portsdlg (hDlg);
+			enable_for_portsdlg (hDlg);
+		} else if (HIWORD(wParam) == EN_CHANGE && (LOWORD(wParam) == IDC_SER_TCP_ADDR || LOWORD(wParam) == IDC_SER_TCP_PORT ||
+			LOWORD(wParam) == IDC_SER_CTSFEED_ADDR || LOWORD(wParam) == IDC_SER_CTSFEED_PORT)) {
 			values_from_portsdlg (hDlg);
 		} else {
 			if (HIWORD (wParam) == CBN_SELCHANGE) {
