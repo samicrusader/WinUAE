@@ -228,6 +228,10 @@ static const TCHAR *dongles[] =
 static const TCHAR *cdmodes[] = { _T("disabled"), _T(""), _T("image"), _T("ioctl"), _T("spti"), _T("aspi"), 0 };
 static const TCHAR *cdconmodes[] = { _T(""), _T("uae"), _T("ide"), _T("scsi"), _T("cdtv"), _T("cd32"), 0 };
 static const TCHAR *genlockmodes[] = { _T("none"), _T("noise"), _T("testcard"), _T("image"), _T("video"), _T("stream"), _T("ld"), _T("sony_ld"), _T("pioneer_ld"), NULL };
+// indexes match od-win32/videograb_libav.cpp vg_scaler_flags / vg_deint_filters
+static const TCHAR *genlockscalers[] = { _T("none"), _T("point"), _T("fast_bilinear"), _T("bilinear"), _T("bicubic"), _T("lanczos"), _T("spline"), _T("area"), NULL };
+static const TCHAR *genlockdeints[] = { _T("none"), _T("bwdif"), _T("bwdif_field"), _T("yadif"), _T("yadif_field"), _T("w3fdif"), _T("estdif"), NULL };
+static const TCHAR *genlockfields[] = { _T("auto"), _T("yes"), _T("no"), NULL };
 static const TCHAR *ppc_implementations[] = {
 	_T("auto"),
 	_T("dummy"),
@@ -2629,6 +2633,11 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 	cfgfile_dwrite_str(f, _T("genlock_image"), p->genlock_image_file);
 	cfgfile_dwrite_str(f, _T("genlock_video"), p->genlock_video_file);
 	cfgfile_dwrite_str(f, _T("genlock_font"), p->genlock_font);
+	cfgfile_dwrite_str(f, _T("genlock_stream"), p->genlock_stream);
+	cfgfile_dwrite_strarr(f, _T("genlock_video_scaler"), genlockscalers, p->genlock_video_scaler);
+	cfgfile_dwrite_strarr(f, _T("genlock_video_deinterlace"), genlockdeints, p->genlock_video_deinterlace);
+	cfgfile_dwrite_strarr(f, _T("genlock_video_fields"), genlockfields, p->genlock_video_fields);
+	cfgfile_dwrite_str(f, _T("genlock_video_filter"), p->genlock_video_filter);
 	cfgfile_dwrite(f, _T("genlock_mix"), _T("%d"), p->genlock_mix);
 	cfgfile_dwrite(f, _T("genlock_scale"), _T("%d"), p->genlock_scale);
 	cfgfile_dwrite(f, _T("genlock_offset_x"), _T("%d"), p->genlock_offset_x);
@@ -6186,6 +6195,9 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_strval(option, value, _T("monitoremu"), &p->monitoremu, specialmonitorconfignames, 0)
 #endif
 		|| cfgfile_strval(option, value, _T("genlockmode"), &p->genlock_image, genlockmodes, 0)
+		|| cfgfile_strval(option, value, _T("genlock_video_scaler"), &p->genlock_video_scaler, genlockscalers, 0)
+		|| cfgfile_strval(option, value, _T("genlock_video_deinterlace"), &p->genlock_video_deinterlace, genlockdeints, 0)
+		|| cfgfile_strval(option, value, _T("genlock_video_fields"), &p->genlock_video_fields, genlockfields, 0)
 		|| cfgfile_strval(option, value, _T("waiting_blits"), &p->waiting_blits, waitblits, 0)
 		|| cfgfile_strval(option, value, _T("floppy_auto_extended_adf"), &p->floppy_auto_ext2, autoext2, 0)
 		|| cfgfile_strval(option, value,  _T("z3mapping"), &p->z3_mapping_mode, z3mapping, 0)
@@ -6227,6 +6239,8 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_string(option, value, _T("genlock_image"), p->genlock_image_file, sizeof p->genlock_image_file / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_video"), p->genlock_video_file, sizeof p->genlock_video_file / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_font"), p->genlock_font, sizeof p->genlock_font / sizeof(TCHAR))
+		|| cfgfile_string(option, value, _T("genlock_stream"), p->genlock_stream, sizeof p->genlock_stream / sizeof(TCHAR))
+		|| cfgfile_string(option, value, _T("genlock_video_filter"), p->genlock_video_filter, sizeof p->genlock_video_filter / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T ("pci_devices"), p->pci_devices, sizeof p->pci_devices / sizeof(TCHAR))
 		|| cfgfile_string (option, value, _T("ghostscript_parameters"), p->ghostscript_parameters, sizeof p->ghostscript_parameters / sizeof (TCHAR)))
 		return 1;
@@ -8831,6 +8845,11 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 	p->display_calibration = 0;
 	p->genlock = 0;
 	p->genlock_image = 0;
+	p->genlock_stream[0] = 0;
+	p->genlock_video_scaler = 4;	// bicubic
+	p->genlock_video_deinterlace = 0;
+	p->genlock_video_fields = 0;
+	p->genlock_video_filter[0] = 0;
 	p->genlock_mix = 0;
 	p->genlock_offset_x = 0;
 	p->genlock_offset_y = 0;

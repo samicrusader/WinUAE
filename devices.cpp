@@ -313,6 +313,10 @@ void devices_vsync_pre(void)
 	statusline_vsync();
 
 	execute_device_items(device_vsyncs_pre, device_vsync_pre_cnt);
+#ifdef VIDEOGRAB_LIBAV
+	// after the device items, so a LaserDisc model has re-asserted Still first
+	videograb_vsync();
+#endif
 }
 
 void devices_vsync_post(void)
@@ -362,6 +366,9 @@ void devices_update_sound(float clk, float syncadjust)
 #endif
 #ifdef WITH_MIDIEMU
 	midi_update_sound(clk / syncadjust);
+#endif
+#ifdef VIDEOGRAB_LIBAV
+	videograb_update_sound(clk / syncadjust);
 #endif
 }
 
@@ -534,7 +541,8 @@ void devices_pause(void)
 #ifdef RETROPLATFORM
 	rp_pause(1);
 #endif
-#ifdef VIDEOGRAB
+#if defined(VIDEOGRAB) && !defined(VIDEOGRAB_LIBAV)
+	// the FFmpeg backend is clocked by emulated vsyncs, so a GUI pause stops it by itself
 	pausevideograb(1);
 #endif
 	ethernet_pause(1);
@@ -552,7 +560,7 @@ void devices_unpause(void)
 #ifdef WITH_DSP
 	dsp_pause(0);
 #endif
-#ifdef VIDEOGRAB
+#if defined(VIDEOGRAB) && !defined(VIDEOGRAB_LIBAV)
 	pausevideograb(0);
 #endif
 	ethernet_pause(0);

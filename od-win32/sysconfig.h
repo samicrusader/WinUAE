@@ -167,7 +167,12 @@
 // Special Monitors support
 #define WITH_SPECIALMONITORS
 
+#ifdef WINUAE_FFMPEG
+/* genlock video through FFmpeg (od-win32/videograb_libav.cpp); the vcxproj
+ * defines WINUAE_FFMPEG for platforms that have 3rdparty/ffmpeg built */
 #define VIDEOGRAB 1
+#define VIDEOGRAB_LIBAV 1
+#endif
 
 // Beam racing support
 #define WITH_BEAMRACER

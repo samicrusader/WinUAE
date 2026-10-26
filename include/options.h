@@ -677,6 +677,11 @@ struct uae_prefs {
 	TCHAR genlock_image_file[MAX_DPATH];
 	TCHAR genlock_video_file[MAX_DPATH];
 	TCHAR genlock_font[MAX_DPATH];
+	TCHAR genlock_stream[MAX_DPATH];		/* live source URL (genlockmode=stream, FFmpeg backend) */
+	int genlock_video_scaler;			/* 0 none (point-sampled in do_genlock), else swscale algorithm */
+	int genlock_video_deinterlace;			/* 0 none, else a libavfilter deinterlacer */
+	int genlock_video_fields;			/* scale interlaced material field-wise: 0 auto, 1 yes, 2 no */
+	TCHAR genlock_video_filter[MAX_DPATH];		/* libavfilter chain applied before scaling */
 	int monitoremu;
 	int monitoremu_mon;
 	float chipset_refreshrate;

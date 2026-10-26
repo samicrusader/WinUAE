@@ -973,6 +973,26 @@
       <EnableDPIAwareness>PerMonitorHighDPIAware</EnableDPIAwareness>
     </Manifest>
   </ItemDefinitionGroup>
+  <!-- FFmpeg genlock video (3rdparty/ffmpeg, built by its build.cmd for each platform).
+       Where it hasn't been built, WINUAE_FFMPEG stays undefined and the build has no genlock video. -->
+  <PropertyGroup>
+    <WinUAEFFArch Condition="'$(Platform)'=='Win32'">x86</WinUAEFFArch>
+    <WinUAEFFArch Condition="'$(Platform)'=='x64'">x64</WinUAEFFArch>
+    <WinUAEFFArch Condition="'$(Platform)'=='ARM64'">arm64</WinUAEFFArch>
+    <WinUAEFFmpeg>$(WinUAE3rdParty)\ffmpeg\$(WinUAEFFArch)</WinUAEFFmpeg>
+    <WinUAEFFDeps>$(WinUAE3rdParty)\ffmpeg\deps\$(WinUAEFFArch)-windows-static</WinUAEFFDeps>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="Exists('$(WinUAEFFmpeg)\lib\avcodec.lib')">
+    <ClCompile>
+      <PreprocessorDefinitions>WINUAE_FFMPEG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(WinUAEFFmpeg)\include</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <!-- after WinUAE's own directories, so zs.lib stays the 3rdparty one WinUAE already links -->
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);$(WinUAEFFmpeg)\lib;$(WinUAEFFDeps)\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>avformat.lib;avfilter.lib;avcodec.lib;swscale.lib;swresample.lib;avutil.lib;dav1d.lib;jxl.lib;jxl_threads.lib;jxl_cms.lib;hwy.lib;brotlienc.lib;brotlidec.lib;brotlicommon.lib;lcms2.lib;libxml2.lib;srt.lib;libssl.lib;libcrypto.lib;bcrypt.lib;secur32.lib;ncrypt.lib;crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\archivers\chd\astring.cpp" />
     <ClCompile Include="..\..\archivers\chd\chd.cpp" />
@@ -3315,7 +3335,11 @@
     <ClCompile Include="..\win32_uaenet.cpp" />
     <ClCompile Include="..\win32gfx.cpp" />
     <ClCompile Include="..\win32gui_extra.cpp" />
-    <ClCompile Include="..\win32_videograb.cpp" />
+    <ClCompile Include="..\videograb_libav.cpp" />
+    <ClCompile Include="..\videograb_libav_decode.cpp">
+      <!-- talks to FFmpeg, whose headers name no calling convention: must not be /Gr -->
+      <CallingConvention>Cdecl</CallingConvention>
+    </ClCompile>
     <ClCompile Include="..\writelog.cpp" />
     <ClCompile Include="..\..\a2065.cpp" />
     <ClCompile Include="..\..\a2091.cpp" />
