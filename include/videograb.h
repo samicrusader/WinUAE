@@ -18,3 +18,14 @@ void setchflagsvideograb(int chflags, bool mute);
 void setfreezevideograb(int freeze);
 bool getfreezevideograb(void);
 void isvideograb_status(void);
+#ifdef VIDEOGRAB_LIBAV
+/* FFmpeg backend (od-win32/videograb_libav.cpp) only. */
+/* once per emulated field: advances the play position */
+void videograb_vsync(void);
+/* emulated audio clock, from devices_update_sound() */
+void videograb_update_sound(float clk);
+/* size of the genlock area; frames are delivered scaled to it */
+void setvideograbtarget(int width, int height, bool keep_aspect);
+/* the frame last returned by getvideograb() was scaled to that target */
+bool getvideograbprescaled(void);
+#endif

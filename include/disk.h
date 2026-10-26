@@ -26,7 +26,8 @@ typedef enum {
 #define HISTORY_GEO 8
 #define HISTORY_STATEFILE 9
 #define HISTORY_CONFIGFILE 10
-#define HISTORY_MAX 11
+#define HISTORY_GENLOCK_STREAM 11
+#define HISTORY_MAX 12
 
 struct diskinfo
 {

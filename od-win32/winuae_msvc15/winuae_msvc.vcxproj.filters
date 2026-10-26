@@ -739,7 +739,10 @@
     <ClCompile Include="..\..\framebufferboards.cpp">
       <Filter>common</Filter>
     </ClCompile>
-    <ClCompile Include="..\win32_videograb.cpp">
+    <ClCompile Include="..\videograb_libav.cpp">
+      <Filter>win32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\videograb_libav_decode.cpp">
       <Filter>win32</Filter>
     </ClCompile>
     <ClCompile Include="..\..\fpp_native.cpp">

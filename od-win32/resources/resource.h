@@ -413,6 +413,13 @@
 #define IDS_QUIT_WARNING                418
 #define IDS_UNMAPPED_ADDRESS            419
 #define IDS_GENLOCK_OPTIONS             420
+#define IDS_GENLOCK_OPTIONS2            1015
+#define IDD_GENLOCKVIDEO                407
+#define IDC_GENLOCK_VIDEO               1870
+#define IDC_GENLOCK_SCALER              1871
+#define IDC_GENLOCK_DEINT               1872
+#define IDC_GENLOCK_FIELDS              1873
+#define IDC_GENLOCK_FILTER              1874
 #define IDS_READONLYCONFIRMATION        421
 #define IDS_SCREEN_NATIVELACE           422
 #define IDS_PORT_AUTOFIRE_TOGGLENOAF    423
@@ -1436,9 +1443,9 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
 #define _APS_3D_CONTROLS                     1
-#define _APS_NEXT_RESOURCE_VALUE        407
+#define _APS_NEXT_RESOURCE_VALUE        408
 #define _APS_NEXT_COMMAND_VALUE         40054
-#define _APS_NEXT_CONTROL_VALUE         1870
+#define _APS_NEXT_CONTROL_VALUE         1875
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -2459,6 +2459,28 @@ static uae_u8 noise_buffer[1024];
 static uae_u32 noise_seed, noise_add, noise_index;
 static bool genlock_error, genlock_blank;
 
+#ifdef VIDEOGRAB_LIBAV
+static bool genlock_video_prescaled;
+/* The path or URL a genlock mode plays through videograb, NULL for the
+ * modes that don't use it. "Image file" and "Video file" are one "Media
+ * file" source here (stills decode through FFmpeg too); an old config's
+ * image path still works. Capture devices are gone; mode 5 is a live URL. */
+static const TCHAR *genlock_video_source(const struct uae_prefs *p)
+{
+	switch (p->genlock_image)
+	{
+	case 3:
+		return p->genlock_image_file;
+	case 4:
+		return p->genlock_video_file[0] ? p->genlock_video_file : p->genlock_image_file;
+	case 5:
+		return p->genlock_stream;
+	default:
+		return p->genlock_image >= 6 ? p->genlock_video_file : NULL;
+	}
+}
+#endif
+
 #ifdef VIDEOGRAB
 static void close_genlock_video(void)
 {
@@ -2471,7 +2493,13 @@ static void close_genlock_video(void)
 
 void specialmonitor_update_genlock(void)
 {
-#ifdef VIDEOGRAB
+#ifdef VIDEOGRAB_LIBAV
+	const TCHAR *vsrc = genlock_video_source(&currprefs);
+	if (!vsrc || !vsrc[0] || !(currprefs.genlock || currprefs.genlock_effects)) {
+		close_genlock_video();
+		genlock_error = false;
+	}
+#elif defined(VIDEOGRAB)
 	const bool file_video_source = currprefs.genlock_image == 4 || currprefs.genlock_image >= 6;
 	const bool video_source = file_video_source || currprefs.genlock_image == 5;
 	const bool video_source_active = video_source &&
@@ -2635,7 +2663,68 @@ static bool do_genlock(struct vidbuffer *src, struct vidbuffer *dst, bool double
 
 	uae_u8 *genlock_image = NULL;
 
-#ifdef VIDEOGRAB
+#ifdef VIDEOGRAB_LIBAV
+	genlock_video_prescaled = false;
+	const TCHAR *vsrc = genlock_video_source(&currprefs);
+	if (vsrc) {
+		if (vsrc[0]) {
+			genlock_blank = false;
+			if ((!genlock_video && !genlock_error) || _tcsicmp(vsrc, genlock_video_file)) {
+				_tcscpy(genlock_video_file, vsrc);
+				genlock_video = initvideograb(vsrc);
+				if (!genlock_video) {
+					genlock_error = true;
+				} else if (currprefs.genlock_image >= 8) {
+					// a laserdisc player comes up parked and plays nothing
+					// until the host tells it to
+					pausevideograb(1);
+				}
+			}
+			if (currprefs.genlock_image >= 8) {
+				if (!pioneerld_active()) {
+					genlock_blank = true;
+					if (!getpausevideograb())
+						pausevideograb(1);
+					goto skip;
+				}
+			}
+			if (currprefs.genlock_image == 6) {
+				if (!alg_ld_active()) {
+					genlock_blank = true;
+					if (!getpausevideograb())
+						pausevideograb(1);
+					goto skip;
+				}
+			}
+			if (currprefs.genlock_image == 6 || currprefs.genlock_image == 7) {
+				genlock_blank = !ld_video_enabled();
+			} else if (currprefs.genlock_image >= 8) {
+				genlock_blank = !pioneerld_video_enabled();
+			}
+		} else {
+			genlock_error = true;
+		}
+		int vidw = 0, vidh = 0;
+		long *vidbuf = NULL;
+		if (genlock_video && getvideograb(&vidbuf, &vidw, &vidh)) {
+			genlock_image = (uae_u8*)vidbuf;
+			genlock_image_width = vidw;
+			genlock_image_height = vidh;
+			genlock_image_pixbytes = 3;
+			genlock_image_pitch = genlock_image_width * genlock_image_pixbytes;
+			genlock_image_red_index = 2;
+			genlock_image_green_index = 1;
+			genlock_image_blue_index = 0;
+			genlock_image_upsidedown = true;
+			genlock_video_prescaled = getvideograbprescaled();
+			genlock_error = false;
+		} else if (!genlock_blank) {
+			// a live source still connecting has no picture yet
+			genlock_error = true;
+		}
+	}
+skip:
+#elif defined(VIDEOGRAB)
 	if (currprefs.genlock_image == 5) {
 		genlock_blank = false;
 		if ((!genlock_video && !genlock_error) || _tcsicmp(_T(":CAPTURE:"), genlock_video_file)) {
@@ -2734,6 +2823,7 @@ skip:
 			load_genlock_image();
 		}
 		genlock_image = genlock_image_data;
+#ifndef VIDEOGRAB_LIBAV
 	} else if (currprefs.genlock_image == 3) {
 		genlock_blank = false;
 		if (!currprefs.genlock_image_file[0]) {
@@ -2745,12 +2835,22 @@ skip:
 			}
 		}
 		genlock_image = genlock_image_data;
+#endif
 	}
 
 	if (genlock_image_data && currprefs.genlock_image != 2 && currprefs.genlock_image != 3) {
 		xfree(genlock_image_data);
 		genlock_image_data = NULL;
 	}
+#ifdef VIDEOGRAB_LIBAV
+	if (genlock_video && !genlock_video_source(&currprefs)) {
+		close_genlock_video();
+	}
+	isvideograb_status();
+	if (!genlock_video_source(&currprefs)) {
+		genlock_video_file[0] = 0;
+	}
+#else
 #ifdef VIDEOGRAB
 	if (genlock_video && currprefs.genlock_image != 4 && currprefs.genlock_image != 5 && currprefs.genlock_image < 6) {
 		close_genlock_video();
@@ -2760,6 +2860,7 @@ skip:
 	if (currprefs.genlock_image != 4 && currprefs.genlock_image != 5 && currprefs.genlock_image < 6) {
 		genlock_video_file[0] = 0;
 	}
+#endif
 	if (currprefs.genlock_image != 3) {
 		genlock_image_file[0] = 0;
 	}
@@ -2809,12 +2910,23 @@ skip:
 	int deltax = 65536;
 	int deltay = 65536;
 
+#ifdef VIDEOGRAB_LIBAV
+	// ask for frames at the size of the area they fill; once they arrive
+	// that way (aspect fit included) they are copied 1:1 and centred
+	if (genlock_video) {
+		setvideograbtarget(aw, ah, currprefs.genlock_aspect != 0);
+	}
+	if (!genlock_video_prescaled) {
+#endif
 	if (abs(genlock_image_width - aw) > 8) {
 		deltax = genlock_image_width * 65536 / aw;
 	}
 	if (abs(genlock_image_height - ah) > 8) {
 		deltay = genlock_image_height * 65536 / ah;
 	}
+#ifdef VIDEOGRAB_LIBAV
+	}
+#endif
 
 	deltax -= currprefs.genlock_scale * 256;
 	deltay -= currprefs.genlock_scale * 256;

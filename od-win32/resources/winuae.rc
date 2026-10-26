@@ -807,6 +807,7 @@ BEGIN
     CONTROL         "Include alpha channel in screenshots and video captures.",IDC_GENLOCK_ALPHA,
                     "Button",BS_AUTOCHECKBOX | BS_LEFT | WS_GROUP | WS_TABSTOP,13,261,214,10
     CONTROL         "Keep aspect ratio",IDC_GENLOCK_KEEP_ASPECT,"Button",BS_AUTOCHECKBOX | BS_LEFT | WS_GROUP | WS_TABSTOP,13,276,214,10
+    PUSHBUTTON      "Video processing...",IDC_GENLOCK_VIDEO,297,273,88,14
     COMBOBOX        IDC_GENLOCKFILE,12,292,356,75,CBS_DROPDOWN | CBS_AUTOHSCROLL | WS_VSCROLL | WS_TABSTOP
     PUSHBUTTON      "...",IDC_GENLOCKFILESELECT,375,291,10,15
     COMBOBOX        IDC_KEYBOARDMODE,12,142,191,65,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
@@ -1207,6 +1208,24 @@ BEGIN
     PUSHBUTTON      "Cancel",IDCANCEL,169,40,58,14
     CONTROL         "",IDC_PROGRESSBAR,"msctls_progress32",PBS_SMOOTH | WS_BORDER,7,19,381,14
     CTEXT           "x",IDC_PROGRESSBAR_TEXT,14,5,368,10,SS_CENTERIMAGE | WS_TABSTOP
+END
+
+IDD_GENLOCKVIDEO DIALOGEX 0, 0, 344, 130
+STYLE DS_LOCALEDIT | DS_SETFONT | DS_MODALFRAME | DS_3DLOOK | DS_CENTER | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Genlock video processing"
+FONT 8, "MS Sans Serif", 0, 0, 0x0
+BEGIN
+    RTEXT           "Scaling:",IDC_STATIC,4,10,92,12,SS_CENTERIMAGE
+    COMBOBOX        IDC_GENLOCK_SCALER,100,10,236,80,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    RTEXT           "Deinterlace:",IDC_STATIC,4,28,92,12,SS_CENTERIMAGE
+    COMBOBOX        IDC_GENLOCK_DEINT,100,28,236,80,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    RTEXT           "Scale fields separately:",IDC_STATIC,4,46,92,12,SS_CENTERIMAGE
+    COMBOBOX        IDC_GENLOCK_FIELDS,100,46,236,80,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    RTEXT           "Filter chain:",IDC_STATIC,4,64,92,12,SS_CENTERIMAGE
+    EDITTEXT        IDC_GENLOCK_FILTER,100,64,236,14,ES_AUTOHSCROLL
+    LTEXT           "libavfilter syntax, run before scaling. Example: crop=704:480,eq=saturation=1.2",IDC_STATIC,100,81,236,20
+    DEFPUSHBUTTON   "OK",IDOK,112,108,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,182,108,50,14
 END
 
 IDD_STRINGBOX DIALOGEX 0, 0, 396, 209
@@ -2228,6 +2247,7 @@ BEGIN
     IDS_QUIT_WARNING        "Are you sure you want to quit WinUAE?"
     IDS_UNMAPPED_ADDRESS    "Floating\nAll zeros\nAll ones\n"
     IDS_GENLOCK_OPTIONS     "Noise (built-in)\nTest card (built-in)\nImage file (png)\nVideo file\nCapture device\nAmerican Laser Games/Picmatic LaserDisc Player\nSony LaserDisc Player\nPioneer LaserDisc Player\n"
+    IDS_GENLOCK_OPTIONS2    "Noise (built-in)\nTest card (built-in)\nMedia file\nLive stream (URL)\nAmerican Laser Games/Picmatic LaserDisc Player\nSony LaserDisc Player\nPioneer LaserDisc Player\n"
     IDS_READONLYCONFIRMATION 
                             "Selected configuration file is write protected.\nDo you want to overwrite it?\n%s\n"
     IDS_SCREEN_NATIVELACE   "Native (Interlaced)"
