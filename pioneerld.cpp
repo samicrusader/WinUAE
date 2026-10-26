@@ -301,6 +301,14 @@ static void seek_to(uae_s64 frame)
 		frame = 0;
 	ld_frame = frame;
 	ld_field = 0;
+	/* Any repositioning cancels a pending stop marker, as on the real player.
+	 * Without this, a marker armed for an earlier segment stays live and the
+	 * next segment that begins beyond it is killed before it plays a frame.
+	 * Observed 2026-10-25: marker 72910 left armed, SE to 85230, the player
+	 * dropped to STILL on the first vsync after PL, and vd polled P05 for
+	 * five seconds and then abandoned the slot. Safe because Sneak always
+	 * sends SM after the seek and PL, never before. */
+	ld_mark_set = false;
 	ld_stop_target = ld_mode == LD_P_PLAY ? next_stop(ld_frame) : 0;
 #ifdef VIDEOGRAB
 	if (isvideograb()) {
@@ -393,6 +401,7 @@ static void pioneerld_vsync(void)
 	if (ld_mode != LD_P_PLAY)
 		return;
 	/* CAV: 29.97 frames/s, one disc frame per two NTSC fields. */
+	uae_s64 prev_frame = ld_frame;
 	ld_field ^= 1;
 	if (!ld_field)
 		ld_frame++;
@@ -412,7 +421,12 @@ static void pioneerld_vsync(void)
 	 * that is pending-but-never-reached stays armed, which used to disable
 	 * picture stops for the rest of the session. On the disc the stop code is
 	 * in the vertical interval and fires whatever the host has armed. */
-	if (ld_mark_set && ld_frame >= ld_mark) {
+	/* Edge-triggered: only CROSSING the marker while playing fires it. Merely
+	 * arriving at a position already beyond a stale marker must not, or a seek
+	 * past an abandoned marker kills the new segment on its first vsync. When
+	 * this condition is false the picture-stop branch below still runs, so a
+	 * stale marker no longer disables picture stops either. */
+	if (ld_mark_set && prev_frame < ld_mark && ld_frame >= ld_mark) {
 		ld_mark_set = false;
 		if (log_pioneerld)
 			write_log(_T("PIONEERLD: stop marker %lld reached\n"), ld_mark);
