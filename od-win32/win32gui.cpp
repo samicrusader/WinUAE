@@ -18347,7 +18347,7 @@ static void ser_tcp_split(const TCHAR *s, TCHAR *addr, int addrsize, TCHAR *port
 			port[portsize - 1] = 0;
 		}
 	}
-	_tcsncpy(addr, tmp[0] ? tmp : _T("0.0.0.0"), addrsize - 1);
+	_tcsncpy(addr, tmp[0] ? tmp : _T("127.0.0.1"), addrsize - 1);
 	addr[addrsize - 1] = 0;
 }
 
@@ -18369,7 +18369,7 @@ static void ser_tcp_join(HWND hDlg, int addrid, int portid, const TCHAR *defport
 		_tcscpy(port, defport);
 	else
 		_stprintf(port, _T("%d"), n);
-	_sntprintf(out, outsize, _T("%s%s:%s%s"), prefix, addr[0] ? addr : _T("0.0.0.0"), port, suffix);
+	_sntprintf(out, outsize, _T("%s%s:%s%s"), prefix, addr[0] ? addr : _T("127.0.0.1"), port, suffix);
 	out[outsize - 1] = 0;
 }
 
@@ -18747,7 +18747,7 @@ static void values_from_portsdlg (HWND hDlg)
 		TCHAR defport[16];
 		LRESULT mode;
 		lf->enabled = ischecked(hDlg, linefeed_ids[i][0]);
-		_stprintf(defport, _T("%d"), 1236 + i);
+		_stprintf(defport, _T("%d"), 1235 + i);
 		ser_tcp_join(hDlg, linefeed_ids[i][1], linefeed_ids[i][2], defport, _T(""), _T(""),
 			lf->listen, sizeof lf->listen / sizeof(TCHAR));
 		mode = xSendDlgItemMessage(hDlg, linefeed_ids[i][3], CB_GETCURSEL, 0, 0L);
@@ -18844,7 +18844,7 @@ static void values_to_portsdlg (HWND hDlg)
 		for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
 			const struct serial_linefeed *lf = &workprefs.serial_linefeed[i];
 			TCHAR defport[16], tmp[64];
-			_stprintf(defport, _T("%d"), 1236 + i);
+			_stprintf(defport, _T("%d"), 1235 + i);
 			ser_tcp_split(lf->listen, addr, sizeof addr / sizeof(TCHAR), port, sizeof port / sizeof(TCHAR), NULL, defport);
 			SetDlgItemText(hDlg, linefeed_ids[i][1], addr);
 			SetDlgItemText(hDlg, linefeed_ids[i][2], port);

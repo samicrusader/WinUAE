@@ -8679,7 +8679,7 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 		lf->enabled = false;
 		lf->mode = i == SERIAL_LINEFEED_CD ? SERIAL_LINEFEED_MODE_LEVEL : SERIAL_LINEFEED_MODE_SERIAL;
 		lf->baud = 110;
-		_stprintf(lf->listen, _T("0.0.0.0:%d"), 1236 + i);
+		_stprintf(lf->listen, _T("127.0.0.1:%d"), 1235 + i);
 	}
 	p->parallel_demand = 0;
 	p->parallel_matrix_emulation = 0;

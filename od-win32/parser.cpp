@@ -1108,7 +1108,7 @@ void linefeed_close(int line)
 	}
 }
 
-// addr: [TCP://]host:port; an empty host means 0.0.0.0
+// addr: [TCP://]host:port; an empty host means 127.0.0.1
 bool linefeed_open(int line, const TCHAR *addr)
 {
 	TCHAR host[256], port[32];
@@ -1127,7 +1127,7 @@ bool linefeed_open(int line, const TCHAR *addr)
 		addr += 4;
 	_tcsncpy(host, addr, 255);
 	host[255] = 0;
-	_stprintf(port, _T("%d"), 1236 + line);
+	_stprintf(port, _T("%d"), 1235 + line);
 	p = _tcsrchr(host, ':');
 	if (p) {
 		*p++ = 0;
@@ -1137,7 +1137,7 @@ bool linefeed_open(int line, const TCHAR *addr)
 		}
 	}
 	if (!host[0])
-		_tcscpy(host, _T("0.0.0.0"));
+		_tcscpy(host, _T("127.0.0.1"));
 
 	if (WSAStartup(MAKEWORD(2, 2), &wsadata)) {
 		write_log(_T("%sFEED: WSAStartup() failed: %d\n"), linefeed_name[line], WSAGetLastError());
@@ -1890,7 +1890,7 @@ int enumserialports (void)
 	if (cnt < MAX_SERPAR_PORTS) {
 		// one entry: the address, port and wait flag are set separately in the GUI
 		comports[cnt] = xcalloc(struct serparportinfo, 1);
-		comports[cnt]->dev = my_strdup (_T("TCP://0.0.0.0:1234"));
+		comports[cnt]->dev = my_strdup (_T("TCP://127.0.0.1:1234"));
 		comports[cnt]->cfgname = my_strdup (comports[cnt]->dev);
 		comports[cnt]->name = my_strdup (_T("TCP/IP listener"));
 		cnt++;
