@@ -809,7 +809,8 @@ static const TCHAR *historytypes[] =
 	_T("GenlockVideoMRUList"),
 	_T("GeometryMRUList"),
 	_T("StatefileMRUList"),
-	_T("ConfigfileMRUList")
+	_T("ConfigfileMRUList"),
+	_T("GenlockStreamMRUList")
 };
 static int regread;
 
@@ -854,6 +855,7 @@ void write_disk_history (void)
 	write_disk_history2(HISTORY_GEO);
 	write_disk_history2(HISTORY_STATEFILE);
 	write_disk_history2(HISTORY_CONFIGFILE);
+	write_disk_history2(HISTORY_GENLOCK_STREAM);
 }
 
 void reset_disk_history (void)
@@ -872,6 +874,7 @@ void reset_disk_history (void)
 		DISK_history_add(NULL, i, HISTORY_GEO, 0);
 		DISK_history_add(NULL, i, HISTORY_STATEFILE, 0);
 		DISK_history_add(NULL, i, HISTORY_CONFIGFILE, 0);
+		DISK_history_add(NULL, i, HISTORY_GENLOCK_STREAM, 0);
 	}
 	rrold = regread;
 	regread = (1 << HISTORY_MAX) - 1;
@@ -2739,9 +2742,69 @@ static void selectdisk (struct uae_prefs *prefs, HWND hDlg, int num, int id, con
 	DISK_history_add (prefs->floppyslots[num].df, -1, HISTORY_FLOPPY, 0);
 }
 
+#ifdef VIDEOGRAB_LIBAV
+/* Rows of the genlock source combo with the FFmpeg backend: image and video
+ * files are one "Media file" row (genlock_image 4; an old config's 3 shows
+ * there too), capture devices are gone, row 4 is a live stream URL. */
+static const int genlock_combo_modes[] = { 0, 1, 2, 4, 5, 6, 7, 8 };
+#define GENLOCK_COMBO_ROWS ((int)(sizeof genlock_combo_modes / sizeof genlock_combo_modes[0]))
+
+static int genlock_mode_to_combo(int mode)
+{
+	if (mode == 3)
+		mode = 4;
+	for (int i = 0; i < GENLOCK_COMBO_ROWS; i++) {
+		if (genlock_combo_modes[i] == mode)
+			return i;
+	}
+	return 0;
+}
+
+static int genlock_combo_to_mode(int row)
+{
+	return row >= 0 && row < GENLOCK_COMBO_ROWS ? genlock_combo_modes[row] : 0;
+}
+
+static bool genlock_mode_is_media(int mode)
+{
+	return mode == 3 || mode == 4 || mode >= 6;
+}
+
+/* the string the file box shows and edits for the current mode */
+static TCHAR *genlock_text_target(struct uae_prefs *p)
+{
+	if (p->genlock_image == 5)
+		return p->genlock_stream;
+	if (p->genlock_image == 3 && !p->genlock_video_file[0])
+		return p->genlock_image_file;
+	return p->genlock_video_file;
+}
+
+static void setgenlock(HWND hDlg);
+
+/* an old "image" config becomes a media file the moment it is edited */
+static void genlock_media_from_image(struct uae_prefs *p)
+{
+	if (p->genlock_image != 3)
+		return;
+	if (!p->genlock_video_file[0])
+		_tcscpy(p->genlock_video_file, p->genlock_image_file);
+	p->genlock_image = 4;
+}
+#endif
+
 static void selectgenlock(struct uae_prefs *prefs, HWND hDlg, int id, const TCHAR *full_path)
 {
 	SetDlgItemText(hDlg, id, full_path);
+#ifdef VIDEOGRAB_LIBAV
+	if (genlock_mode_is_media(prefs->genlock_image)) {
+		genlock_media_from_image(prefs);
+		_tcscpy(prefs->genlock_video_file, full_path);
+		fullpath(prefs->genlock_video_file, sizeof prefs->genlock_video_file / sizeof(TCHAR));
+		DISK_history_add(prefs->genlock_video_file, -1, HISTORY_GENLOCK_VIDEO, 0);
+	}
+	return;
+#endif
 	if (workprefs.genlock_image == 3) {
 		_tcscpy(prefs->genlock_image_file, full_path);
 		fullpath(prefs->genlock_image_file, sizeof prefs->genlock_image_file / sizeof(TCHAR));
@@ -3085,7 +3148,11 @@ int DiskSelection_2 (HWND hDlg, WPARAM wParam, int flag, struct uae_prefs *prefs
 		_tcscpy(szTitle, _T("Select genlock image"));
 		break;
 	case 21:
+#ifdef VIDEOGRAB_LIBAV
+		_tcscpy(szTitle, _T("Select genlock media file"));
+#else
 		_tcscpy(szTitle, _T("Select genlock video"));
+#endif
 		break;
 	case 23:
 	case 24:
@@ -8276,8 +8343,19 @@ static void enable_for_chipsetdlg (HWND hDlg)
 	ew(hDlg, IDC_GENLOCKMIX, genlock ? TRUE : FALSE);
 	ew(hDlg, IDC_GENLOCK_ALPHA, genlock ? TRUE : FALSE);
 	ew(hDlg, IDC_GENLOCK_KEEP_ASPECT, genlock ? TRUE : FALSE);
+#ifdef VIDEOGRAB_LIBAV
+	{
+		bool media = genlock_mode_is_media(workprefs.genlock_image);
+		bool stream = workprefs.genlock_image == 5;
+		ew(hDlg, IDC_GENLOCKFILE, genlock && (media || stream) ? TRUE : FALSE);
+		ew(hDlg, IDC_GENLOCKFILESELECT, genlock && media ? TRUE : FALSE);
+		ew(hDlg, IDC_GENLOCK_VIDEO, genlock && (media || stream) ? TRUE : FALSE);
+	}
+#else
 	ew(hDlg, IDC_GENLOCKFILE, genlock && (workprefs.genlock_image >= 6 || (workprefs.genlock_image >= 3 && workprefs.genlock_image < 5)) ? TRUE : FALSE);
 	ew(hDlg, IDC_GENLOCKFILESELECT, genlock && (workprefs.genlock_image >= 6 || (workprefs.genlock_image >= 3 && workprefs.genlock_image < 5)) ? TRUE : FALSE);
+	ShowWindow(GetDlgItem(hDlg, IDC_GENLOCK_VIDEO), SW_HIDE);
+#endif
 
 	ew(hDlg, IDC_MONITOREMU_MON, workprefs.monitoremu != 0);
 
@@ -9278,7 +9356,11 @@ static void values_to_chipsetdlg (HWND hDlg)
 	xSendDlgItemMessage(hDlg, IDC_DISPLAY_OPTIMIZATION, CB_SETCURSEL, workprefs.cs_optimizations, 0);
 	xSendDlgItemMessage(hDlg, IDC_MONITOREMU, CB_SETCURSEL, workprefs.monitoremu, 0);
 	xSendDlgItemMessage(hDlg, IDC_MONITOREMU_MON, CB_SETCURSEL, workprefs.monitoremu_mon, 0);
+#ifdef VIDEOGRAB_LIBAV
+	xSendDlgItemMessage(hDlg, IDC_GENLOCKMODE, CB_SETCURSEL, genlock_mode_to_combo(workprefs.genlock_image), 0);
+#else
 	xSendDlgItemMessage(hDlg, IDC_GENLOCKMODE, CB_SETCURSEL, workprefs.genlock_image, 0);
+#endif
 	xSendDlgItemMessage(hDlg, IDC_GENLOCKMIX, CB_SETCURSEL, workprefs.genlock_mix / 25, 0);
 	CheckDlgButton(hDlg, IDC_GENLOCK_ALPHA, workprefs.genlock_alpha);
 	CheckDlgButton(hDlg, IDC_GENLOCK_KEEP_ASPECT, workprefs.genlock_aspect);
@@ -9385,6 +9467,13 @@ static void values_from_chipsetdlg (HWND hDlg, UINT msg, WPARAM wParam, LPARAM l
 		workprefs.monitoremu_mon = nn;
 
 	nn = xSendDlgItemMessage(hDlg, IDC_GENLOCKMODE, CB_GETCURSEL, 0, 0);
+#ifdef VIDEOGRAB_LIBAV
+	if (nn != CB_ERR && nn != genlock_mode_to_combo(workprefs.genlock_image)) {
+		workprefs.genlock_image = genlock_combo_to_mode(nn);
+		setgenlock(hDlg);
+	}
+	nn = CB_ERR;	// a combo row is not a genlock_image value; the code below is the old mapping
+#endif
 	if (nn != CB_ERR && nn != workprefs.genlock_image) {
 		workprefs.genlock_image = nn;
 		if (workprefs.genlock_image == 3) {
@@ -9404,12 +9493,117 @@ static void values_from_chipsetdlg (HWND hDlg, UINT msg, WPARAM wParam, LPARAM l
 static void setgenlock(HWND hDlg)
 {
 	setautocomplete(hDlg, IDC_GENLOCKFILE);
+#ifdef VIDEOGRAB_LIBAV
+	if (workprefs.genlock_image == 5) {
+		addhistorymenu(hDlg, workprefs.genlock_stream, IDC_GENLOCKFILE, HISTORY_GENLOCK_STREAM, false, -1);
+	} else if (genlock_mode_is_media(workprefs.genlock_image)) {
+		addhistorymenu(hDlg, genlock_text_target(&workprefs), IDC_GENLOCKFILE, HISTORY_GENLOCK_VIDEO, true, -1);
+	} else {
+		xSendDlgItemMessage(hDlg, IDC_GENLOCKFILE, CB_RESETCONTENT, 0, 0);
+	}
+	return;
+#endif
 	if (workprefs.genlock_image == 3) {
 		addhistorymenu(hDlg, workprefs.genlock_image_file, IDC_GENLOCKFILE, HISTORY_GENLOCK_IMAGE, true, -1);
 	} else if (workprefs.genlock_image == 4 || workprefs.genlock_image >= 6) {
 		addhistorymenu(hDlg, workprefs.genlock_video_file, IDC_GENLOCKFILE, HISTORY_GENLOCK_VIDEO, true, -1);
 	}
 }
+
+#ifdef VIDEOGRAB_LIBAV
+/* value order matches cfgfile.cpp genlockscalers / genlockdeints / genlockfields */
+static const TCHAR *genlock_scaler_names[] = {
+	_T("None (point-sampled by the genlock, old behaviour)"), _T("Point"), _T("Fast bilinear"), _T("Bilinear"),
+	_T("Bicubic"), _T("Lanczos"), _T("Spline"), _T("Area"), NULL
+};
+static const TCHAR *genlock_deint_names[] = {
+	_T("None (keep the fields)"), _T("bwdif"), _T("bwdif, field rate"), _T("yadif"), _T("yadif, field rate"),
+	_T("w3fdif"), _T("estdif"), NULL
+};
+static const TCHAR *genlock_fields_names[] = {
+	_T("Auto (as the stream flags it)"), _T("Always"), _T("Never"), NULL
+};
+
+static void genlock_fill_combo(HWND hDlg, int id, const TCHAR **names, int sel)
+{
+	xSendDlgItemMessage(hDlg, id, CB_RESETCONTENT, 0, 0);
+	for (int i = 0; names[i]; i++)
+		xSendDlgItemMessage(hDlg, id, CB_ADDSTRING, 0, (LPARAM)names[i]);
+	xSendDlgItemMessage(hDlg, id, CB_SETCURSEL, sel, 0);
+}
+
+static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	bool handled;
+	INT_PTR v = commonproc(hDlg, msg, wParam, lParam, &handled);
+	if (handled) {
+		return v;
+	}
+	switch (msg)
+	{
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		return TRUE;
+	case WM_CLOSE:
+		CustomDialogClose(hDlg, 0);
+		DestroyWindow(hDlg);
+		return TRUE;
+	case WM_INITDIALOG:
+		genlock_fill_combo(hDlg, IDC_GENLOCK_SCALER, genlock_scaler_names, workprefs.genlock_video_scaler);
+		genlock_fill_combo(hDlg, IDC_GENLOCK_DEINT, genlock_deint_names, workprefs.genlock_video_deinterlace);
+		genlock_fill_combo(hDlg, IDC_GENLOCK_FIELDS, genlock_fields_names, workprefs.genlock_video_fields);
+		SetDlgItemText(hDlg, IDC_GENLOCK_FILTER, workprefs.genlock_video_filter);
+		return TRUE;
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case IDOK:
+		{
+			LRESULT r;
+			r = xSendDlgItemMessage(hDlg, IDC_GENLOCK_SCALER, CB_GETCURSEL, 0, 0);
+			if (r != CB_ERR)
+				workprefs.genlock_video_scaler = (int)r;
+			r = xSendDlgItemMessage(hDlg, IDC_GENLOCK_DEINT, CB_GETCURSEL, 0, 0);
+			if (r != CB_ERR)
+				workprefs.genlock_video_deinterlace = (int)r;
+			r = xSendDlgItemMessage(hDlg, IDC_GENLOCK_FIELDS, CB_GETCURSEL, 0, 0);
+			if (r != CB_ERR)
+				workprefs.genlock_video_fields = (int)r;
+			GetDlgItemText(hDlg, IDC_GENLOCK_FILTER, workprefs.genlock_video_filter, sizeof workprefs.genlock_video_filter / sizeof(TCHAR));
+			CustomDialogClose(hDlg, 1);
+			return TRUE;
+		}
+		case IDCANCEL:
+			CustomDialogClose(hDlg, 0);
+			return TRUE;
+		}
+		break;
+	}
+	return FALSE;
+}
+
+static void genlock_video_dialog(HWND hDlg)
+{
+	SAVECDS;
+	HWND hwnd = CustomCreateDialog(IDD_GENLOCKVIDEO, hDlg, GenlockVideoDialogProc, &cdstate);
+	if (hwnd != NULL) {
+		while (cdstate.active) {
+			MSG msg;
+			int ret;
+			WaitMessage();
+			while ((ret = GetMessage(&msg, NULL, 0, 0))) {
+				if (ret == -1)
+					break;
+				if (!IsWindow(hwnd) || !IsDialogMessage(hwnd, &msg)) {
+					TranslateMessage(&msg);
+					DispatchMessage(&msg);
+				}
+			}
+		}
+	}
+	RESTORECDS;
+}
+#endif
 
 static void appendkbmcurom(TCHAR *s, bool hasrom)
 {
@@ -9500,7 +9694,11 @@ static INT_PTR CALLBACK ChipsetDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPAR
 
 		xSendDlgItemMessage(hDlg, IDC_GENLOCKMODE, CB_RESETCONTENT, 0, 0);
 		xSendDlgItemMessage(hDlg, IDC_GENLOCKMODE, CB_ADDSTRING, 0, (LPARAM)_T("-"));
+#ifdef VIDEOGRAB_LIBAV
+		WIN32GUI_LoadUIString(IDS_GENLOCK_OPTIONS2, tmp, sizeof tmp / sizeof(TCHAR));
+#else
 		WIN32GUI_LoadUIString(IDS_GENLOCK_OPTIONS, tmp, sizeof tmp / sizeof(TCHAR));
+#endif
 		TCHAR *p1 = tmp;
 		for (;;) {
 			TCHAR *p2 = _tcschr(p1, '\n');
@@ -9570,6 +9768,26 @@ static INT_PTR CALLBACK ChipsetDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPAR
 			{
 				case IDC_GENLOCKFILE:
 				{
+#ifdef VIDEOGRAB_LIBAV
+					if (workprefs.genlock_image == 5) {
+						// a URL: no path parsing, no making it absolute
+						getcomboboxtext(hDlg, IDC_GENLOCKFILE, workprefs.genlock_stream, MAX_DPATH);
+						DISK_history_add(workprefs.genlock_stream, -1, HISTORY_GENLOCK_STREAM, 1);
+						addhistorymenu(hDlg, workprefs.genlock_stream, IDC_GENLOCKFILE, HISTORY_GENLOCK_STREAM, false, -1);
+						break;
+					}
+					if (genlock_mode_is_media(workprefs.genlock_image)) {
+						TCHAR tmpf[MAX_DPATH];
+						getcomboboxtext(hDlg, IDC_GENLOCKFILE, tmpf, MAX_DPATH);
+						parsefilepath(tmpf, MAX_DPATH);
+						if (_tcscmp(tmpf, genlock_text_target(&workprefs))) {
+							genlock_media_from_image(&workprefs);
+							_tcscpy(workprefs.genlock_video_file, tmpf);
+						}
+						addhistorymenu(hDlg, workprefs.genlock_video_file, IDC_GENLOCKFILE, HISTORY_GENLOCK_VIDEO, true, -1);
+					}
+					break;
+#endif
 					TCHAR *p = workprefs.genlock_image == 3 ? workprefs.genlock_image_file : workprefs.genlock_video_file;
 					getcomboboxtext(hDlg, IDC_GENLOCKFILE, p, MAX_DPATH);
 					parsefilepath(p, MAX_DPATH);
@@ -9584,9 +9802,18 @@ static INT_PTR CALLBACK ChipsetDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPAR
 			{
 				TCHAR path[MAX_DPATH];
 				path[0] = 0;
+#ifdef VIDEOGRAB_LIBAV
+				DiskSelection(hDlg, IDC_GENLOCKFILESELECT, 21, &workprefs, NULL, path);
+#else
 				DiskSelection(hDlg, IDC_GENLOCKFILESELECT, workprefs.genlock_image == 3 ? 20 : 21, &workprefs, NULL, path);
+#endif
 				break;
 			}
+#ifdef VIDEOGRAB_LIBAV
+			case IDC_GENLOCK_VIDEO:
+				genlock_video_dialog(hDlg);
+				break;
+#endif
 			case IDC_BLITWAIT:
 			if (workprefs.immediate_blits) {
 				workprefs.immediate_blits = false;
