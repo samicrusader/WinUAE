@@ -1291,7 +1291,13 @@ void screenshot_reset(void)
 bool screenshot_save(int monid, const TCHAR *path)
 {
 	int original = screenshot_originalsize, clip = screenshot_clipmode;
-	bool prepared = screenshot_prepare(monid, -1, nullptr, true) != 0;
+	// The genlock and special-monitor composite is written to outbuffer;
+	// getfilterbuffer(), the path taken with no buffer, reads inbuffer, the
+	// Amiga layer before it, so a GDB "monitor screenshot" lost the genlock
+	// video. Capture the composite when there is one (od-unix does the same).
+	struct vidbuf_description *avidinfo = &adisplays[monid].gfxvidinfo;
+	struct vidbuffer *vb = avidinfo->outbuffer && avidinfo->outbuffer != avidinfo->inbuffer ? avidinfo->outbuffer : nullptr;
+	bool prepared = screenshot_prepare(monid, -1, vb, true) != 0;
 	screenshot_originalsize = original;
 	screenshot_clipmode = clip;
 	bool ok = false;
