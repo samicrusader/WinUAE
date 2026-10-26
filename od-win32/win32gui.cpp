@@ -18300,6 +18300,23 @@ static void enable_for_gameportsdlg (HWND hDlg)
 	ew (hDlg, IDC_PORT_TABLET_CURSOR, v && workprefs.input_tablet > 0);
 }
 
+// serial status line feeds: checkbox, address, port, mode for CTS, DSR, CD
+static const int linefeed_ids[SERIAL_LINEFEEDS][4] = {
+	{ IDC_SER_CTSFEED, IDC_SER_CTSFEED_ADDR, IDC_SER_CTSFEED_PORT, IDC_SER_CTSFEED_MODE },
+	{ IDC_SER_DSRFEED, IDC_SER_DSRFEED_ADDR, IDC_SER_DSRFEED_PORT, IDC_SER_DSRFEED_MODE },
+	{ IDC_SER_CDFEED, IDC_SER_CDFEED_ADDR, IDC_SER_CDFEED_PORT, IDC_SER_CDFEED_MODE },
+};
+
+// is id column col (0 checkbox, 1 address, 2 port, 3 mode) of any line feed row?
+static bool linefeed_is_ctl(int id, int col)
+{
+	for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
+		if (linefeed_ids[i][col] == id)
+			return true;
+	}
+	return false;
+}
+
 // [TCP://]host:port[/wait] -> host, port, wait flag; defaults for missing parts
 static void ser_tcp_split(const TCHAR *s, TCHAR *addr, int addrsize, TCHAR *port, int portsize, bool *wait, const TCHAR *defport)
 {
@@ -18376,9 +18393,10 @@ static void enable_for_portsdlg (HWND hDlg)
 	ew(hDlg, IDC_SER_TCP_ADDR, FALSE);
 	ew(hDlg, IDC_SER_TCP_PORT, FALSE);
 	ew(hDlg, IDC_SER_TCP_WAIT, FALSE);
-	ew(hDlg, IDC_SER_CTSFEED, FALSE);
-	ew(hDlg, IDC_SER_CTSFEED_ADDR, FALSE);
-	ew(hDlg, IDC_SER_CTSFEED_PORT, FALSE);
+	for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
+		for (int j = 0; j < 4; j++)
+			ew(hDlg, linefeed_ids[i][j], FALSE);
+	}
 #else
 	v = workprefs.use_serial ? TRUE : FALSE;
 	{
@@ -18386,8 +18404,10 @@ static void enable_for_portsdlg (HWND hDlg)
 		ew(hDlg, IDC_SER_TCP_ADDR, tcp);
 		ew(hDlg, IDC_SER_TCP_PORT, tcp);
 		ew(hDlg, IDC_SER_TCP_WAIT, tcp);
-		ew(hDlg, IDC_SER_CTSFEED_ADDR, workprefs.serial_ctsfeed);
-		ew(hDlg, IDC_SER_CTSFEED_PORT, workprefs.serial_ctsfeed);
+		for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
+			for (int j = 1; j < 4; j++)
+				ew(hDlg, linefeed_ids[i][j], workprefs.serial_linefeed[i].enabled);
+		}
 	}
 	ew(hDlg, IDC_SER_SHARED, v);
 	ew(hDlg, IDC_SER_CTSRTS, v);
@@ -18722,9 +18742,18 @@ static void values_from_portsdlg (HWND hDlg)
 	workprefs.serial_ri = ischecked(hDlg, IDC_SER_RI);
 	workprefs.serial_crlf = ischecked(hDlg, IDC_SER_CRLF);
 	workprefs.serial_direct = ischecked(hDlg, IDC_SER_DIRECT);
-	workprefs.serial_ctsfeed = ischecked(hDlg, IDC_SER_CTSFEED);
-	ser_tcp_join(hDlg, IDC_SER_CTSFEED_ADDR, IDC_SER_CTSFEED_PORT, _T("1235"), _T(""), _T(""),
-		workprefs.serial_ctsfeed_listen, sizeof workprefs.serial_ctsfeed_listen / sizeof(TCHAR));
+	for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
+		struct serial_linefeed *lf = &workprefs.serial_linefeed[i];
+		TCHAR defport[16];
+		LRESULT mode;
+		lf->enabled = ischecked(hDlg, linefeed_ids[i][0]);
+		_stprintf(defport, _T("%d"), 1236 + i);
+		ser_tcp_join(hDlg, linefeed_ids[i][1], linefeed_ids[i][2], defport, _T(""), _T(""),
+			lf->listen, sizeof lf->listen / sizeof(TCHAR));
+		mode = xSendDlgItemMessage(hDlg, linefeed_ids[i][3], CB_GETCURSEL, 0, 0L);
+		if (mode != CB_ERR)
+			lf->mode = (int)mode;
+	}
 
 	workprefs.uaeserial = ischecked(hDlg, IDC_UAESERIAL);
 
@@ -18810,14 +18839,24 @@ static void values_to_portsdlg (HWND hDlg)
 		SetDlgItemText(hDlg, IDC_SER_TCP_ADDR, addr);
 		SetDlgItemText(hDlg, IDC_SER_TCP_PORT, port);
 		CheckDlgButton(hDlg, IDC_SER_TCP_WAIT, wait);
-		ser_tcp_split(workprefs.serial_ctsfeed_listen, addr, sizeof addr / sizeof(TCHAR), port, sizeof port / sizeof(TCHAR), NULL, _T("1235"));
-		SetDlgItemText(hDlg, IDC_SER_CTSFEED_ADDR, addr);
-		SetDlgItemText(hDlg, IDC_SER_CTSFEED_PORT, port);
-		CheckDlgButton(hDlg, IDC_SER_CTSFEED, workprefs.serial_ctsfeed);
 		SendDlgItemMessage(hDlg, IDC_SER_TCP_ADDR, EM_LIMITTEXT, 199, 0);
 		SendDlgItemMessage(hDlg, IDC_SER_TCP_PORT, EM_LIMITTEXT, 5, 0);
-		SendDlgItemMessage(hDlg, IDC_SER_CTSFEED_ADDR, EM_LIMITTEXT, 199, 0);
-		SendDlgItemMessage(hDlg, IDC_SER_CTSFEED_PORT, EM_LIMITTEXT, 5, 0);
+		for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
+			const struct serial_linefeed *lf = &workprefs.serial_linefeed[i];
+			TCHAR defport[16], tmp[64];
+			_stprintf(defport, _T("%d"), 1236 + i);
+			ser_tcp_split(lf->listen, addr, sizeof addr / sizeof(TCHAR), port, sizeof port / sizeof(TCHAR), NULL, defport);
+			SetDlgItemText(hDlg, linefeed_ids[i][1], addr);
+			SetDlgItemText(hDlg, linefeed_ids[i][2], port);
+			CheckDlgButton(hDlg, linefeed_ids[i][0], lf->enabled);
+			SendDlgItemMessage(hDlg, linefeed_ids[i][1], EM_LIMITTEXT, 199, 0);
+			SendDlgItemMessage(hDlg, linefeed_ids[i][2], EM_LIMITTEXT, 5, 0);
+			xSendDlgItemMessage(hDlg, linefeed_ids[i][3], CB_RESETCONTENT, 0, 0L);
+			_stprintf(tmp, _T("Serial, %d baud 8N1"), lf->baud);
+			xSendDlgItemMessage(hDlg, linefeed_ids[i][3], CB_ADDSTRING, 0, (LPARAM)tmp);
+			xSendDlgItemMessage(hDlg, linefeed_ids[i][3], CB_ADDSTRING, 0, (LPARAM)_T("Level ('1' / '0')"));
+			xSendDlgItemMessage(hDlg, linefeed_ids[i][3], CB_SETCURSEL, lf->mode, 0L);
+		}
 	}
 
 	if(!workprefs.sername[0])  {
@@ -19277,11 +19316,13 @@ static INT_PTR CALLBACK IOPortsDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPAR
 			}
 		} else if (wParam == IDC_UAESERIAL || wParam == IDC_SER_SHARED || wParam == IDC_SER_DIRECT || wParam == IDC_SER_CTSRTS || wParam == IDC_SER_RTSCTSDTRDTECD || wParam == IDC_SER_RI ||
 			wParam == IDC_SER_CRLF || wParam == IDC_PRINTERAUTOFLUSH || wParam == IDC_SAMPLER_STEREO || wParam == IDC_MIDIROUTER ||
-			wParam == IDC_SER_TCP_WAIT || wParam == IDC_SER_CTSFEED) {
+			wParam == IDC_SER_TCP_WAIT || linefeed_is_ctl((int)wParam, 0)) {
 			values_from_portsdlg (hDlg);
 			enable_for_portsdlg (hDlg);
 		} else if (HIWORD(wParam) == EN_CHANGE && (LOWORD(wParam) == IDC_SER_TCP_ADDR || LOWORD(wParam) == IDC_SER_TCP_PORT ||
-			LOWORD(wParam) == IDC_SER_CTSFEED_ADDR || LOWORD(wParam) == IDC_SER_CTSFEED_PORT)) {
+			linefeed_is_ctl(LOWORD(wParam), 1) || linefeed_is_ctl(LOWORD(wParam), 2))) {
+			values_from_portsdlg (hDlg);
+		} else if (HIWORD(wParam) == CBN_SELCHANGE && linefeed_is_ctl(LOWORD(wParam), 3)) {
 			values_from_portsdlg (hDlg);
 		} else {
 			if (HIWORD (wParam) == CBN_SELCHANGE) {

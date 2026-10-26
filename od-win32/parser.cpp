@@ -1081,30 +1081,35 @@ end:
 	return 0;
 }
 
-/* CTS line feed: a second TCP listener whose bytes serial_win32.cpp clocks
-   out on the CTS input (ctsfeed_hsync). One client at a time, non-blocking. */
-static SOCKET ctsfeed_sock = INVALID_SOCKET;
-static SOCKET ctsfeed_conn = INVALID_SOCKET;
-static bool ctsfeed_wsa;
+/* Serial status line feeds (CTS, DSR, CD): one TCP listener per line whose
+   bytes serial_win32.cpp turns into line states (linefeed_hsync). One client
+   per line at a time, non-blocking throughout. */
+#define LINEFEEDS 3
+static SOCKET linefeed_sock[LINEFEEDS] = { INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET };
+static SOCKET linefeed_conn[LINEFEEDS] = { INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET };
+static bool linefeed_wsa[LINEFEEDS];
+static const TCHAR *linefeed_name[LINEFEEDS] = { _T("CTS"), _T("DSR"), _T("CD") };
 
-void ctsfeed_close(void)
+void linefeed_close(int line)
 {
-	if (ctsfeed_conn != INVALID_SOCKET) {
-		closesocket(ctsfeed_conn);
-		ctsfeed_conn = INVALID_SOCKET;
+	if (line < 0 || line >= LINEFEEDS)
+		return;
+	if (linefeed_conn[line] != INVALID_SOCKET) {
+		closesocket(linefeed_conn[line]);
+		linefeed_conn[line] = INVALID_SOCKET;
 	}
-	if (ctsfeed_sock != INVALID_SOCKET) {
-		closesocket(ctsfeed_sock);
-		ctsfeed_sock = INVALID_SOCKET;
+	if (linefeed_sock[line] != INVALID_SOCKET) {
+		closesocket(linefeed_sock[line]);
+		linefeed_sock[line] = INVALID_SOCKET;
 	}
-	if (ctsfeed_wsa) {
+	if (linefeed_wsa[line]) {
 		WSACleanup();
-		ctsfeed_wsa = false;
+		linefeed_wsa[line] = false;
 	}
 }
 
-// addr: [TCP://]host:port; an empty host means 0.0.0.0, no port means 1235
-bool ctsfeed_open(const TCHAR *addr)
+// addr: [TCP://]host:port; an empty host means 0.0.0.0
+bool linefeed_open(int line, const TCHAR *addr)
 {
 	TCHAR host[256], port[32];
 	ADDRINFOW hints = { 0 };
@@ -1113,14 +1118,16 @@ bool ctsfeed_open(const TCHAR *addr)
 	const int one = 1;
 	TCHAR *p;
 
-	ctsfeed_close();
+	if (line < 0 || line >= LINEFEEDS)
+		return false;
+	linefeed_close(line);
 	if (!_tcsnicmp(addr, _T("TCP://"), 6))
 		addr += 6;
 	else if (!_tcsnicmp(addr, _T("TCP:"), 4))
 		addr += 4;
 	_tcsncpy(host, addr, 255);
 	host[255] = 0;
-	_tcscpy(port, _T("1235"));
+	_stprintf(port, _T("%d"), 1236 + line);
 	p = _tcsrchr(host, ':');
 	if (p) {
 		*p++ = 0;
@@ -1133,63 +1140,63 @@ bool ctsfeed_open(const TCHAR *addr)
 		_tcscpy(host, _T("0.0.0.0"));
 
 	if (WSAStartup(MAKEWORD(2, 2), &wsadata)) {
-		write_log(_T("CTSFEED: WSAStartup() failed: %d\n"), WSAGetLastError());
+		write_log(_T("%sFEED: WSAStartup() failed: %d\n"), linefeed_name[line], WSAGetLastError());
 		return false;
 	}
-	ctsfeed_wsa = true;
+	linefeed_wsa[line] = true;
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 	if (GetAddrInfoW(host, port, &hints, &ai) || !ai) {
-		write_log(_T("CTSFEED: can't resolve %s:%s: %d\n"), host, port, WSAGetLastError());
+		write_log(_T("%sFEED: can't resolve %s:%s: %d\n"), linefeed_name[line], host, port, WSAGetLastError());
 		goto fail;
 	}
-	ctsfeed_sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-	if (ctsfeed_sock == INVALID_SOCKET) {
-		write_log(_T("CTSFEED: socket() failed: %d\n"), WSAGetLastError());
+	linefeed_sock[line] = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+	if (linefeed_sock[line] == INVALID_SOCKET) {
+		write_log(_T("%sFEED: socket() failed: %d\n"), linefeed_name[line], WSAGetLastError());
 		goto fail;
 	}
-	setsockopt(ctsfeed_sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char*)&one, sizeof one);
-	if (bind(ctsfeed_sock, ai->ai_addr, (int)ai->ai_addrlen) == SOCKET_ERROR || listen(ctsfeed_sock, 1) == SOCKET_ERROR) {
-		write_log(_T("CTSFEED: can't listen on %s:%s: %d (CTS stays released until the setting changes)\n"), host, port, WSAGetLastError());
+	setsockopt(linefeed_sock[line], SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char*)&one, sizeof one);
+	if (bind(linefeed_sock[line], ai->ai_addr, (int)ai->ai_addrlen) == SOCKET_ERROR || listen(linefeed_sock[line], 1) == SOCKET_ERROR) {
+		write_log(_T("%sFEED: can't listen on %s:%s: %d (the line stays released until the setting changes)\n"), linefeed_name[line], host, port, WSAGetLastError());
 		goto fail;
 	}
-	ioctlsocket(ctsfeed_sock, FIONBIO, &nonblock);
+	ioctlsocket(linefeed_sock[line], FIONBIO, &nonblock);
 	FreeAddrInfoW(ai);
-	write_log(_T("CTSFEED: listening on %s:%s\n"), host, port);
+	write_log(_T("%sFEED: listening on %s:%s\n"), linefeed_name[line], host, port);
 	return true;
 fail:
 	if (ai)
 		FreeAddrInfoW(ai);
-	ctsfeed_close();
+	linefeed_close(line);
 	return false;
 }
 
-// up to size bytes from the connected client; 0 when there is nothing (yet)
-int ctsfeed_read(uae_u8 *buf, int size)
+// up to size bytes from the line's client; 0 when there is nothing (yet)
+int linefeed_read(int line, uae_u8 *buf, int size)
 {
 	int n;
 
-	if (ctsfeed_sock == INVALID_SOCKET)
+	if (line < 0 || line >= LINEFEEDS || linefeed_sock[line] == INVALID_SOCKET)
 		return 0;
-	if (ctsfeed_conn == INVALID_SOCKET) {
+	if (linefeed_conn[line] == INVALID_SOCKET) {
 		u_long nonblock = 1;
 		const int one = 1;
-		ctsfeed_conn = accept(ctsfeed_sock, NULL, NULL);
-		if (ctsfeed_conn == INVALID_SOCKET)
+		linefeed_conn[line] = accept(linefeed_sock[line], NULL, NULL);
+		if (linefeed_conn[line] == INVALID_SOCKET)
 			return 0;
-		ioctlsocket(ctsfeed_conn, FIONBIO, &nonblock);
-		setsockopt(ctsfeed_conn, IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof one);
-		write_log(_T("CTSFEED: connection accepted\n"));
+		ioctlsocket(linefeed_conn[line], FIONBIO, &nonblock);
+		setsockopt(linefeed_conn[line], IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof one);
+		write_log(_T("%sFEED: connection accepted\n"), linefeed_name[line]);
 	}
-	n = recv(ctsfeed_conn, (char*)buf, size, 0);
+	n = recv(linefeed_conn[line], (char*)buf, size, 0);
 	if (n > 0)
 		return n;
 	if (n == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK)
 		return 0;
-	closesocket(ctsfeed_conn);
-	ctsfeed_conn = INVALID_SOCKET;
-	write_log(_T("CTSFEED: disconnect\n"));
+	closesocket(linefeed_conn[line]);
+	linefeed_conn[line] = INVALID_SOCKET;
+	write_log(_T("%sFEED: disconnect\n"), linefeed_name[line]);
 	return 0;
 }
 

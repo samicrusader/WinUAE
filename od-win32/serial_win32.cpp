@@ -833,106 +833,143 @@ static void serdatcopy(void)
 }
 
 
-/* CTS line feed. Bytes from a TCP listener (parser.cpp) are clocked out on the
-   CTS input as 110 baud 8N1 in emulated time: start bit = CTS asserted, data
-   bits LSB first with 0 = asserted, stop bit and idle = CTS released. This is
-   the waveform a receiver that bit-bangs CTS expects (EPG Esquire's 110-baud
-   CTRL link), and it stays in step with the emulation in warp mode too. */
-#define CTSFEED_BAUD 110
-static bool ctsfeed_on;
-static TCHAR ctsfeed_cur[256];
-static bool ctsfeed_asserted;
-static int ctsfeed_bit = -1; // -1 idle, 0 start, 1..8 data, 9 stop
-static uae_u8 ctsfeed_byte;
-static uae_u64 ctsfeed_acc;
-static uae_u8 ctsfeed_buf[512];
-static int ctsfeed_len, ctsfeed_pos;
-static int ctsfeed_poll;
-
-static void ctsfeed_reset(void)
+/* Serial status line feeds. Each of CTS, DSR and CD can be driven from its
+   own TCP listener (parser.cpp), in one of two modes:
+   - serial: bytes are clocked out on the line as <baud> 8N1 in emulated time.
+     Start bit = line asserted, data bits LSB first with 0 = asserted, stop bit
+     and idle = released. This is what a receiver that bit-bangs the line
+     expects (EPG Esquire: 110-baud CTRL on CTS, remote keyboard on DSR), and
+     it stays in step with the emulation in warp mode too.
+   - level: '1' or 0x01 asserts the line, '0' or 0x00 releases it, other bytes
+     are ignored. The level is held across disconnects.
+   While a feed is enabled it owns its line, whatever the serial port reports. */
+static const uae_u8 linefeed_bit[SERIAL_LINEFEEDS] = { 0x10, 0x08, 0x20 }; // CIA-B PRA: /CTS, /DSR, /CD
+struct linefeed_state
 {
-	ctsfeed_close();
-	ctsfeed_on = false;
-	ctsfeed_cur[0] = 0;
-	ctsfeed_asserted = false;
-	ctsfeed_bit = -1;
-	ctsfeed_len = ctsfeed_pos = 0;
-	ctsfeed_acc = 0;
-	ctsfeed_poll = 0;
+	bool on;
+	struct serial_linefeed cfg;
+	bool asserted;
+	int bit; // serial: -1 idle, 0 start, 1..8 data, 9 stop
+	uae_u8 byte;
+	uae_u64 acc;
+	uae_u8 buf[512];
+	int len, pos;
+	int poll;
+};
+static struct linefeed_state linefeeds[SERIAL_LINEFEEDS];
+
+static void linefeed_reset(int line)
+{
+	struct linefeed_state *lf = &linefeeds[line];
+	linefeed_close(line);
+	memset(lf, 0, sizeof *lf);
+	lf->bit = -1;
 }
 
-// load the next byte and start its start bit; false if there is none
-static bool ctsfeed_next(void)
+// serial mode: load the next byte and start its start bit; false if there is none
+static bool linefeed_next(struct linefeed_state *lf, int line)
 {
-	if (ctsfeed_pos >= ctsfeed_len) {
-		ctsfeed_pos = 0;
-		ctsfeed_len = ctsfeed_read(ctsfeed_buf, sizeof ctsfeed_buf);
-		if (ctsfeed_len <= 0) {
-			ctsfeed_len = 0;
+	if (lf->pos >= lf->len) {
+		lf->pos = 0;
+		lf->len = linefeed_read(line, lf->buf, sizeof lf->buf);
+		if (lf->len <= 0) {
+			lf->len = 0;
 			return false;
 		}
 	}
-	ctsfeed_byte = ctsfeed_buf[ctsfeed_pos++];
-	ctsfeed_bit = 0;
-	ctsfeed_asserted = true;
+	lf->byte = lf->buf[lf->pos++];
+	lf->bit = 0;
+	lf->asserted = true;
 	return true;
 }
 
-static void ctsfeed_hsync(void)
+static void linefeed_hsync_line(int line)
 {
-	if (currprefs.serial_ctsfeed != ctsfeed_on || (ctsfeed_on && _tcscmp(ctsfeed_cur, currprefs.serial_ctsfeed_listen))) {
-		ctsfeed_reset();
-		if (currprefs.serial_ctsfeed) {
-			ctsfeed_on = true;
-			_tcscpy(ctsfeed_cur, currprefs.serial_ctsfeed_listen);
-			ctsfeed_open(ctsfeed_cur);
+	struct linefeed_state *lf = &linefeeds[line];
+	const struct serial_linefeed *cfg = &currprefs.serial_linefeed[line];
+
+	if (cfg->enabled != lf->on || (lf->on && memcmp(cfg, &lf->cfg, sizeof *cfg))) {
+		linefeed_reset(line);
+		if (cfg->enabled) {
+			lf->on = true;
+			lf->cfg = *cfg;
+			linefeed_open(line, lf->cfg.listen);
 		}
 	}
-	if (!ctsfeed_on)
+	if (!lf->on)
 		return;
-	if (ctsfeed_bit < 0) {
-		// idle: poll the socket about once a millisecond
-		if (ctsfeed_pos >= ctsfeed_len && ++ctsfeed_poll < 16)
+
+	if (lf->cfg.mode == SERIAL_LINEFEED_MODE_LEVEL) {
+		// about once a millisecond; the last level byte wins
+		if (++lf->poll < 16)
 			return;
-		ctsfeed_poll = 0;
-		ctsfeed_acc = 0;
-		ctsfeed_next();
+		lf->poll = 0;
+		int n = linefeed_read(line, lf->buf, sizeof lf->buf);
+		for (int i = 0; i < n; i++) {
+			if (lf->buf[i] == '1' || lf->buf[i] == 1)
+				lf->asserted = true;
+			else if (lf->buf[i] == '0' || lf->buf[i] == 0)
+				lf->asserted = false;
+		}
+		return;
+	}
+
+	if (lf->bit < 0) {
+		// idle: poll the socket about once a millisecond
+		if (lf->pos >= lf->len && ++lf->poll < 16)
+			return;
+		lf->poll = 0;
+		lf->acc = 0;
+		linefeed_next(lf, line);
 		return;
 	}
 	// exact bit period in colour clocks: advance when acc reaches the chipset clock
 	uae_u64 hz = currprefs.ntscmode ? CHIPSET_CLOCK_NTSC : CHIPSET_CLOCK_PAL;
-	ctsfeed_acc += (uae_u64)maxhpos * CTSFEED_BAUD;
-	if (ctsfeed_acc < hz)
+	lf->acc += (uae_u64)maxhpos * lf->cfg.baud;
+	if (lf->acc < hz)
 		return;
-	ctsfeed_acc -= hz;
-	ctsfeed_bit++;
-	if (ctsfeed_bit <= 8) {
-		ctsfeed_asserted = ((ctsfeed_byte >> (ctsfeed_bit - 1)) & 1) == 0;
-	} else if (ctsfeed_bit == 9) {
-		ctsfeed_asserted = false;
-	} else if (!ctsfeed_next()) {
-		ctsfeed_bit = -1;
-		ctsfeed_asserted = false;
+	lf->acc -= hz;
+	lf->bit++;
+	if (lf->bit <= 8) {
+		lf->asserted = ((lf->byte >> (lf->bit - 1)) & 1) == 0;
+	} else if (lf->bit == 9) {
+		lf->asserted = false;
+	} else if (!linefeed_next(lf, line)) {
+		lf->bit = -1;
+		lf->asserted = false;
 	}
 }
 
-// emulator shutdown (devices.cpp); a settings change is picked up by ctsfeed_hsync
-void serial_ctsfeed_free(void)
+static void linefeed_hsync(void)
 {
-	ctsfeed_reset();
+	for (int i = 0; i < SERIAL_LINEFEEDS; i++)
+		linefeed_hsync_line(i);
 }
 
-// CIA-B PRA bit 4 is /CTS: 0 = asserted
-static uae_u8 ctsfeed_status(uae_u8 v)
+// emulator shutdown (devices.cpp); a settings change is picked up by linefeed_hsync
+void serial_linefeed_free(void)
 {
-	if (!ctsfeed_on)
-		return v;
-	return ctsfeed_asserted ? (v & ~0x10) : (v | 0x10);
+	for (int i = 0; i < SERIAL_LINEFEEDS; i++)
+		linefeed_reset(i);
+}
+
+// CIA-B PRA status bits are active low: 0 = asserted
+static uae_u8 linefeed_status(uae_u8 v)
+{
+	for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
+		if (!linefeeds[i].on)
+			continue;
+		if (linefeeds[i].asserted)
+			v &= ~linefeed_bit[i];
+		else
+			v |= linefeed_bit[i];
+	}
+	return v;
 }
 
 void serial_hsynchandler (void)
 {
-	ctsfeed_hsync();
+	linefeed_hsync();
 #ifdef AHI
 	extern void hsyncstuff(void);
 	hsyncstuff();
@@ -1274,7 +1311,7 @@ uae_u8 serial_readstatus(uae_u8 v, uae_u8 dir)
 		getserstat(&status);
 #endif
 	} else {
-		return ctsfeed_status(v);
+		return linefeed_status(v);
 	}
 
 	if (currprefs.serial_rtsctsdtrdtecd) {
@@ -1351,7 +1388,7 @@ uae_u8 serial_readstatus(uae_u8 v, uae_u8 dir)
 	serial_status_debug (_T("read"));
 
 	v = (v & (0x80 | 0x40 | 0x02 | 0x01)) | serbits;
-	return ctsfeed_status(v);
+	return linefeed_status(v);
 }
 
 uae_u8 serial_writestatus (uae_u8 newstate, uae_u8 dir)

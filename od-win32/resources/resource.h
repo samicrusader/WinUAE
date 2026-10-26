@@ -1395,6 +1395,15 @@
 #define IDC_SER_CTSFEED                 1878
 #define IDC_SER_CTSFEED_ADDR            1879
 #define IDC_SER_CTSFEED_PORT            1880
+#define IDC_SER_CTSFEED_MODE            1881
+#define IDC_SER_DSRFEED                 1882
+#define IDC_SER_DSRFEED_ADDR            1883
+#define IDC_SER_DSRFEED_PORT            1884
+#define IDC_SER_DSRFEED_MODE            1885
+#define IDC_SER_CDFEED                  1886
+#define IDC_SER_CDFEED_ADDR             1887
+#define IDC_SER_CDFEED_PORT             1888
+#define IDC_SER_CDFEED_MODE             1889
 #define IDC_ACTIVATEMONITOR             1869
 #define ID__FLOPPYDRIVES                40004
 #define ID_FLOPPYDRIVES_DF0             40005
@@ -1451,7 +1460,7 @@
 #define _APS_3D_CONTROLS                     1
 #define _APS_NEXT_RESOURCE_VALUE        408
 #define _APS_NEXT_COMMAND_VALUE         40054
-#define _APS_NEXT_CONTROL_VALUE         1881
+#define _APS_NEXT_CONTROL_VALUE         1890
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

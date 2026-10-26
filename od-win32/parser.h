@@ -25,9 +25,9 @@ void flushprinter(void);
 int checkserwrite(int spaceneeded);
 void serialuartbreak(int);
 
-bool ctsfeed_open(const TCHAR *addr);
-void ctsfeed_close(void);
-int ctsfeed_read(uae_u8 *buf, int size);
+bool linefeed_open(int line, const TCHAR *addr);
+void linefeed_close(int line);
+int linefeed_read(int line, uae_u8 *buf, int size);
 
 void hsyncstuff(void);
 

@@ -337,6 +337,8 @@ static const TCHAR *uaeboard_off[] = {
 	NULL
 };
 
+const TCHAR *serial_linefeed_names[SERIAL_LINEFEEDS] = { _T("cts"), _T("dsr"), _T("cd") };
+static const TCHAR *serialfeedmode[] = { _T("serial"), _T("level"), NULL };
 static const TCHAR *serialcrlf[] = {
 	_T("disabled"),
 	_T("crlf_cr"),
@@ -2224,8 +2226,18 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 	cfgfile_write_bool (f, _T("serial_direct"), p->serial_direct);
 	cfgfile_dwrite (f, _T("serial_stopbits"), _T("%d"), p->serial_stopbits);
 	cfgfile_dwrite_strarr(f, _T("serial_translate"), serialcrlf, p->serial_crlf);
-	cfgfile_dwrite_bool(f, _T("serial_cts_feed"), p->serial_ctsfeed);
-	cfgfile_dwrite_str(f, _T("serial_cts_feed_listen"), p->serial_ctsfeed_listen);
+	for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
+		const struct serial_linefeed *lf = &p->serial_linefeed[i];
+		TCHAR name[64];
+		_stprintf(name, _T("serial_%s_feed"), serial_linefeed_names[i]);
+		cfgfile_dwrite_bool(f, name, lf->enabled);
+		_stprintf(name, _T("serial_%s_feed_listen"), serial_linefeed_names[i]);
+		cfgfile_dwrite_str(f, name, lf->listen);
+		_stprintf(name, _T("serial_%s_feed_mode"), serial_linefeed_names[i]);
+		cfgfile_dwrite_strarr(f, name, serialfeedmode, lf->mode);
+		_stprintf(name, _T("serial_%s_feed_baud"), serial_linefeed_names[i]);
+		cfgfile_dwrite(f, name, _T("%d"), lf->baud);
+	}
 	cfgfile_write_strarr (f, _T("scsi"), scsimode, p->scsi);
 	cfgfile_write_bool (f, _T("uaeserial"), p->uaeserial);
 	cfgfile_write_bool (f, _T("sana2"), p->sana2);
@@ -5964,6 +5976,31 @@ static void addbcromtypenet(struct uae_prefs *p, int romtype, const TCHAR *netna
 	}
 }
 
+// serial_<cts|dsr|cd>_feed[_listen|_mode|_baud]
+static int cfgfile_parse_linefeed(struct uae_prefs *p, const TCHAR *option, const TCHAR *value)
+{
+	for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
+		struct serial_linefeed *lf = &p->serial_linefeed[i];
+		TCHAR name[64];
+		_stprintf(name, _T("serial_%s_feed"), serial_linefeed_names[i]);
+		if (cfgfile_yesno(option, value, name, &lf->enabled))
+			return 1;
+		_stprintf(name, _T("serial_%s_feed_listen"), serial_linefeed_names[i]);
+		if (cfgfile_string(option, value, name, lf->listen, sizeof lf->listen / sizeof(TCHAR)))
+			return 1;
+		_stprintf(name, _T("serial_%s_feed_mode"), serial_linefeed_names[i]);
+		if (cfgfile_strval(option, value, name, &lf->mode, serialfeedmode, 0))
+			return 1;
+		_stprintf(name, _T("serial_%s_feed_baud"), serial_linefeed_names[i]);
+		if (cfgfile_intval(option, value, name, &lf->baud, 1)) {
+			if (lf->baud < 50 || lf->baud > 19200)
+				lf->baud = 110;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCHAR *value)
 {
 	int tmpval, dummyint, i;
@@ -6120,8 +6157,7 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_yesno(option, value, _T("serial_on_demand"), &p->serial_demand)
 		|| cfgfile_yesno(option, value, _T("serial_hardware_ctsrts"), &p->serial_hwctsrts)
 		|| cfgfile_yesno(option, value, _T("serial_status"), &p->serial_rtsctsdtrdtecd)
-		|| cfgfile_yesno(option, value, _T("serial_cts_feed"), &p->serial_ctsfeed)
-		|| cfgfile_string(option, value, _T("serial_cts_feed_listen"), p->serial_ctsfeed_listen, sizeof p->serial_ctsfeed_listen / sizeof(TCHAR))
+		|| cfgfile_parse_linefeed(p, option, value)
 		|| cfgfile_yesno(option, value, _T("serial_ri"), &p->serial_ri)
 		|| cfgfile_yesno(option, value, _T("serial_direct"), &p->serial_direct)
 		|| cfgfile_yesno(option, value, _T("fpu_strict"), &p->fpu_strict)
@@ -8638,8 +8674,13 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 	p->serial_ri = false;
 	p->serial_rtsctsdtrdtecd = true;
 	p->serial_stopbits = 0;
-	p->serial_ctsfeed = false;
-	_tcscpy(p->serial_ctsfeed_listen, _T("0.0.0.0:1235"));
+	for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
+		struct serial_linefeed *lf = &p->serial_linefeed[i];
+		lf->enabled = false;
+		lf->mode = i == SERIAL_LINEFEED_CD ? SERIAL_LINEFEED_MODE_LEVEL : SERIAL_LINEFEED_MODE_SERIAL;
+		lf->baud = 110;
+		_stprintf(lf->listen, _T("0.0.0.0:%d"), 1236 + i);
+	}
 	p->parallel_demand = 0;
 	p->parallel_matrix_emulation = 0;
 	p->parallel_postscript_emulation = 0;

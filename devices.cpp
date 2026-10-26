@@ -408,7 +408,7 @@ void virtualdevice_free(void)
 #ifdef SERIAL_PORT
 	serial_exit();
 #ifdef _WIN32
-	serial_ctsfeed_free();
+	serial_linefeed_free();
 #endif
 #endif
 #ifdef AUTOCONFIG

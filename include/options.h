@@ -527,6 +527,21 @@ struct monconfig
 #define HVSYNC_CSYNC_SYNC 4
 #define HVSYNC_HVSYNC_SYNC 5
 
+// Serial status lines driven from TCP listeners: CTS, DSR, CD (CIA-B PRA bits 4, 3, 5)
+#define SERIAL_LINEFEEDS 3
+#define SERIAL_LINEFEED_CTS 0
+#define SERIAL_LINEFEED_DSR 1
+#define SERIAL_LINEFEED_CD 2
+#define SERIAL_LINEFEED_MODE_SERIAL 0
+#define SERIAL_LINEFEED_MODE_LEVEL 1
+struct serial_linefeed
+{
+	bool enabled;
+	int mode;	// bytes clocked out as <baud> 8N1, or '0'/'1' (0x00/0x01) set the level
+	int baud;
+	TCHAR listen[256];
+};
+
 struct uae_prefs {
 
 	struct strlist *all_lines;
@@ -553,8 +568,7 @@ struct uae_prefs {
 	bool serial_direct;
 	int serial_stopbits;
 	int serial_crlf;
-	bool serial_ctsfeed;
-	TCHAR serial_ctsfeed_listen[256];
+	struct serial_linefeed serial_linefeed[SERIAL_LINEFEEDS];
 	bool parallel_demand;
 	int parallel_matrix_emulation;
 	bool parallel_postscript_emulation;
