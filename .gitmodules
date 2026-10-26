@@ -1,0 +1,4 @@
+[submodule "3rdparty/ffmpeg/src"]
+	path = 3rdparty/ffmpeg/src
+	url = https://github.com/isanyonedown/FFmpeg.git
+	branch = master

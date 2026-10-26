@@ -1,0 +1,8 @@
+deps/
+obj-*/
+vcpkg_installed/
+# build output: run build.cmd <arch> after cloning
+/x86/
+/x64/
+/arm64/
+build-*.log

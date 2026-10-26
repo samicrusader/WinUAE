@@ -1,0 +1,13 @@
+{
+  "name": "winuae-ffmpeg-deps",
+  "version-string": "1",
+  "description": "External libraries the WinUAE FFmpeg build links: AV1 (dav1d), JPEG XL (libjxl), zlib (PNG, compressed MKV/MP4 headers), libxml2 (DASH), SRT.",
+  "builtin-baseline": "817892b0ecbc6af994dd6df999c73faf795adbf2",
+  "dependencies": [
+    "dav1d",
+    "libjxl",
+    "zlib",
+    { "name": "libxml2", "default-features": false, "features": [ "zlib" ] },
+    "libsrt"
+  ]
+}
