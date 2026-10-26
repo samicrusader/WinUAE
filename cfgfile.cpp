@@ -9924,7 +9924,13 @@ int built_in_chipset_prefs (struct uae_prefs *p)
 	p->cs_ciaoverlay = 1;
 	p->cs_ciaatod = 0;
 	p->cs_rtc = 0;
-	p->cs_rtc_adjust_mode = p->cs_rtc_adjust = 0;
+	/* cs_rtc_adjust is a USER preference (chipset_rtc_adjust in the .uae), not
+	 * a property of the chipset, so a preset must not discard it. Upstream
+	 * zeroed it here, which silently made the option a no-op on every config
+	 * with chipset_compatible set -- ours is A2000 -- and the guest clock went
+	 * on reading real host time with no indication the option had been
+	 * dropped. The mode reset stays; only the offset is preserved. */
+	p->cs_rtc_adjust_mode = 0;
 	p->cs_df0idhw = 1;
 	p->cs_resetwarning = 1;
 	p->cs_ciatodbug = false;
