@@ -3669,7 +3669,7 @@ static void BPLCON0(uae_u16 v)
 
 	// ERSY: Denise is being slaved to external sync. custom_reset() stops
 	// the genlock keying on a cold boot; with no other signal to go on
-	// (genlock_control=none) this is what starts it again.
+	// (genlock_control=none or fader) this is what starts it again.
 	//
 	// It is a weak signal: Kickstart's graphics.library sets ERSY itself
 	// about 2.3 s into a cold boot (frame 137, from ROM) when it finds a
@@ -3680,7 +3680,7 @@ static void BPLCON0(uae_u16 v)
 	// up (pioneerld_vsync).
 #ifdef WITH_SPECIALMONITORS
 	if ((v & 2) && currprefs.genlock_image > 0 && currprefs.genlock_image < 6 &&
-		!currprefs.genlock_control && !genlock_get_keying()) {
+		currprefs.genlock_control != GENLOCK_CONTROL_SERIAL && !genlock_get_keying()) {
 		genlock_set_keying(true, _T("BPLCON0 ERSY"));
 	}
 #endif

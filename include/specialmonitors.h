@@ -15,6 +15,10 @@ bool emulate_grayscale(struct vidbuffer*, struct vidbuffer*);
 bool specialmonitor_linebased(void);
 void genlock_infotext(uae_u8*, struct vidbuffer*);
 void genlock_serial_control(uae_u8 pra, uae_u8 dra);
+// genlock_control: what the genlock takes from the Amiga besides video
+#define GENLOCK_CONTROL_NONE 0   // nothing: Overlay, levels fixed
+#define GENLOCK_CONTROL_SERIAL 1 // mode from serial RTS/DTR + BPLCON0 fader (EPG Esquire)
+#define GENLOCK_CONTROL_FADER 2  // BPLCON0 fader only, mode fixed at Overlay (Sneak Prevue)
 void genlock_fader_bplcon0(uae_u16 v, int vpos);
 void genlock_set_keying(bool on, const TCHAR *why);
 bool genlock_get_keying(void);

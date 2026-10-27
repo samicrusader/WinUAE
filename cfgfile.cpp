@@ -227,7 +227,7 @@ static const TCHAR *dongles[] =
 };
 static const TCHAR *cdmodes[] = { _T("disabled"), _T(""), _T("image"), _T("ioctl"), _T("spti"), _T("aspi"), 0 };
 static const TCHAR *cdconmodes[] = { _T(""), _T("uae"), _T("ide"), _T("scsi"), _T("cdtv"), _T("cd32"), 0 };
-static const TCHAR *genlockcontrol[] = { _T("none"), _T("serial"), NULL };
+static const TCHAR *genlockcontrol[] = { _T("none"), _T("serial"), _T("fader"), NULL };
 static const TCHAR *genlockmodes[] = { _T("none"), _T("noise"), _T("testcard"), _T("image"), _T("video"), _T("stream"), _T("ld"), _T("sony_ld"), _T("pioneer_ld"), NULL };
 // indexes match od-win32/videograb_libav.cpp vg_scaler_flags / vg_deint_filters
 static const TCHAR *genlockscalers[] = { _T("none"), _T("point"), _T("fast_bilinear"), _T("bilinear"), _T("bicubic"), _T("lanczos"), _T("spline"), _T("area"), NULL };

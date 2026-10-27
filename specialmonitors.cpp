@@ -2299,6 +2299,11 @@ static uae_u8 *genlock_image_data;
  * A line whose CIA DDR bit is an input floats high through the port pull-up,
  * so it reads as negated. After reset (DDR = 0) that gives Overlay, which is
  * also what the genlock does when nothing drives it.
+ *
+ * genlock_control=fader takes the fader below but not these lines: on the
+ * Sneak Prevue unit the built-in serial port carries the 2400-baud data feed,
+ * and oldser.device asserts RTS and DTR when vd opens it, which read as
+ * "Ext. Video Only" and hid every Amiga pixel.
  */
 enum { GENLOCK_CTRL_OVERLAY, GENLOCK_CTRL_COMPUTER, GENLOCK_CTRL_EXTERNAL };
 static const TCHAR *genlock_ctrl_names[] = { _T("Overlay Ext. Video"), _T("Computer Only"), _T("Ext. Video Only") };
@@ -2315,7 +2320,9 @@ void genlock_serial_control(uae_u8 pra, uae_u8 dra)
 	// The card starts keying the first time software drives its control
 	// lines. Kickstart's own CIA setup touches them too (from ROM, about 2.3 s
 	// into a cold boot), and that is not the software asking for anything.
-	if (currprefs.genlock_control && !genlock_get_keying() &&
+	// Only genlock_control=serial reads these lines; the mode is still tracked
+	// so switching to it later starts from the lines' real state.
+	if (currprefs.genlock_control == GENLOCK_CONTROL_SERIAL && !genlock_get_keying() &&
 		currprefs.genlock_image > 0 && currprefs.genlock_image < 6) {
 		addrbank &pcbank = get_mem_bank(M68K_GETPC);
 		if (!(pcbank.flags & (ABFLAG_ROM | ABFLAG_ROMIN))) {
@@ -2332,7 +2339,7 @@ void genlock_serial_control(uae_u8 pra, uae_u8 dra)
 	}
 	if (mode != genlock_ctrl_mode) {
 		genlock_ctrl_mode = mode;
-		if (currprefs.genlock_control) {
+		if (currprefs.genlock_control == GENLOCK_CONTROL_SERIAL) {
 			write_log(_T("GENLOCK: RTS=%d DTR=%d -> %s (PC %08x)\n"), rts, dtr, genlock_ctrl_names[mode], M68K_GETPC);
 		}
 	}
@@ -2368,11 +2375,11 @@ static int genlock_effective_mode(void)
 	// through untouched while the video source carries on behind it.
 	if (!genlock_keying && currprefs.genlock_image)
 		return GENLOCK_CTRL_COMPUTER;
-	return currprefs.genlock_control ? genlock_ctrl_mode : GENLOCK_CTRL_OVERLAY;
+	return currprefs.genlock_control == GENLOCK_CONTROL_SERIAL ? genlock_ctrl_mode : GENLOCK_CTRL_OVERLAY;
 }
 
 /*
- * Genlock fader (genlock_control=serial).
+ * Genlock fader (genlock_control=serial or fader).
  *
  * The same genlock takes two 6-bit levels as a serial bitstream on BPLCON0
  * bit 8 (GAUD). EPG Esquire's sub_10922 builds it into its copper lists: on one
