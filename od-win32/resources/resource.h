@@ -428,6 +428,10 @@
 #define IDC_GENLOCK_LD_STOPS            1894
 #define IDC_GENLOCK_LD_STOPSSELECT      1895
 #define IDC_GENLOCK_AUDIO_MUTE          1896
+#define IDC_GENLOCK_RASTER              1897
+#define IDC_GENLOCK_OFFSET_X            1898
+#define IDC_GENLOCK_OFFSET_Y            1899
+#define IDC_GENLOCK_SCALE               1902
 #define IDS_READONLYCONFIRMATION        421
 #define IDS_SCREEN_NATIVELACE           422
 #define IDS_PORT_AUTOFIRE_TOGGLENOAF    423
@@ -1470,7 +1474,7 @@
 #define _APS_3D_CONTROLS                     1
 #define _APS_NEXT_RESOURCE_VALUE        410
 #define _APS_NEXT_COMMAND_VALUE         40054
-#define _APS_NEXT_CONTROL_VALUE         1897
+#define _APS_NEXT_CONTROL_VALUE         1903
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

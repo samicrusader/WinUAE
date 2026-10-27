@@ -9538,6 +9538,25 @@ static const TCHAR *genlock_deint_names[] = {
 static const TCHAR *genlock_fields_names[] = {
 	_T("Auto (as the stream flags it)"), _T("Always"), _T("Never"), NULL
 };
+/* value order matches cfgfile.cpp genlockraster */
+static const TCHAR *genlock_raster_names[] = {
+	_T("Off (composite at the Amiga resolution)"), _T("720x480 (SMPTE RP 202 / DV, NTSC only)"),
+	_T("720x486 (full BT.601 525-line, NTSC only)"), NULL
+};
+
+/* edit box to int: not a number keeps the old value, out of range clamps */
+static void genlock_get_int(HWND hDlg, int id, int *v, int min, int max)
+{
+	BOOL ok = FALSE;
+	int n = (int)GetDlgItemInt(hDlg, id, &ok, TRUE);
+	if (!ok)
+		return;
+	if (n < min)
+		n = min;
+	if (n > max)
+		n = max;
+	*v = n;
+}
 
 static void genlock_fill_combo(HWND hDlg, int id, const TCHAR **names, int sel)
 {
@@ -9569,6 +9588,10 @@ static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wPara
 		genlock_fill_combo(hDlg, IDC_GENLOCK_FIELDS, genlock_fields_names, workprefs.genlock_video_fields);
 		SetDlgItemText(hDlg, IDC_GENLOCK_FILTER, workprefs.genlock_video_filter);
 		CheckDlgButton(hDlg, IDC_GENLOCK_AUDIO_MUTE, workprefs.genlock_audio_mute);
+		genlock_fill_combo(hDlg, IDC_GENLOCK_RASTER, genlock_raster_names, workprefs.genlock_raster);
+		SetDlgItemInt(hDlg, IDC_GENLOCK_OFFSET_X, workprefs.genlock_offset_x, TRUE);
+		SetDlgItemInt(hDlg, IDC_GENLOCK_OFFSET_Y, workprefs.genlock_offset_y, TRUE);
+		SetDlgItemInt(hDlg, IDC_GENLOCK_SCALE, workprefs.genlock_scale, TRUE);
 		return TRUE;
 	case WM_COMMAND:
 		switch (LOWORD(wParam))
@@ -9587,6 +9610,15 @@ static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wPara
 				workprefs.genlock_video_fields = (int)r;
 			GetDlgItemText(hDlg, IDC_GENLOCK_FILTER, workprefs.genlock_video_filter, sizeof workprefs.genlock_video_filter / sizeof(TCHAR));
 			workprefs.genlock_audio_mute = ischecked(hDlg, IDC_GENLOCK_AUDIO_MUTE);
+			r = xSendDlgItemMessage(hDlg, IDC_GENLOCK_RASTER, CB_GETCURSEL, 0, 0);
+			if (r != CB_ERR)
+				workprefs.genlock_raster = (int)r;
+			// raster mode: X is 13.5 MHz samples (720 wide), Y is lines (525-line frame)
+			genlock_get_int(hDlg, IDC_GENLOCK_OFFSET_X, &workprefs.genlock_offset_x, -720, 720);
+			genlock_get_int(hDlg, IDC_GENLOCK_OFFSET_Y, &workprefs.genlock_offset_y, -525, 525);
+			// specialmonitors.cpp: delta -= scale * 256 on a 16.16 step, so 256 would divide by zero;
+			// -256..192 is 0.5x..4x
+			genlock_get_int(hDlg, IDC_GENLOCK_SCALE, &workprefs.genlock_scale, -256, 192);
 			CustomDialogClose(hDlg, 1);
 			return TRUE;
 		}
