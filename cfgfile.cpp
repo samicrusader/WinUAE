@@ -399,6 +399,8 @@ static const TCHAR *obsolete[] = {
 	_T("bogomem_fast"),
 	_T("sound_cdaudio"),
 
+	_T("genlock_ld_audio"),
+
 	NULL
 };
 
@@ -2652,7 +2654,6 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 	cfgfile_dwrite(f, _T("genlock_ld_offset"), _T("%d"), p->genlock_ld_offset);
 	cfgfile_dwrite_str(f, _T("genlock_ld_discid"), p->genlock_ld_discid);
 	cfgfile_dwrite_str(f, _T("genlock_ld_stops"), p->genlock_ld_stops);
-	cfgfile_dwrite_str(f, _T("genlock_ld_audio"), p->genlock_ld_audio);
 	cfgfile_dwrite_str(f, _T("genlock_font"), p->genlock_font);
 	cfgfile_dwrite_str(f, _T("genlock_stream"), p->genlock_stream);
 	cfgfile_dwrite_strarr(f, _T("genlock_video_scaler"), genlockscalers, p->genlock_video_scaler);
@@ -6290,7 +6291,6 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_intval(option, value, _T("genlock_ld_offset"), &p->genlock_ld_offset, 1)
 		|| cfgfile_string(option, value, _T("genlock_ld_discid"), p->genlock_ld_discid, sizeof p->genlock_ld_discid / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_ld_stops"), p->genlock_ld_stops, sizeof p->genlock_ld_stops / sizeof(TCHAR))
-		|| cfgfile_string(option, value, _T("genlock_ld_audio"), p->genlock_ld_audio, sizeof p->genlock_ld_audio / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_font"), p->genlock_font, sizeof p->genlock_font / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_stream"), p->genlock_stream, sizeof p->genlock_stream / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_video_filter"), p->genlock_video_filter, sizeof p->genlock_video_filter / sizeof(TCHAR))

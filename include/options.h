@@ -696,7 +696,6 @@ struct uae_prefs {
 	int genlock_ld_offset;
 	bool genlock_audio_mute;
 	TCHAR genlock_ld_stops[MAX_DPATH];
-	TCHAR genlock_ld_audio[MAX_DPATH];
 	TCHAR genlock_ld_discid[16];
 	TCHAR genlock_font[MAX_DPATH];
 	TCHAR genlock_stream[MAX_DPATH];		/* live source URL (genlockmode=stream, FFmpeg backend) */
