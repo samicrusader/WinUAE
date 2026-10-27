@@ -4826,6 +4826,8 @@ static const struct miscentry misclist[] = {
 	{ 0, 1, _T("Warp mode reset"), &workprefs.turbo_boot },
 	{ 0, 1, _T("GUI game pad control"), &workprefs.win32_gui_control },
 	{ 0, 1, _T("Default on screen keyboard (Pad button 4)"), &workprefs.input_default_onscreen_keyboard },
+	// past the end of IDS_MISCLISTITEMS1-6, so the name below is used as is
+	{ 0, 0, _T("Capture mouse and keyboard automatically"), &workprefs.win32_auto_capture_input },
 	{ 0, 0, NULL }
 };
 
