@@ -421,6 +421,13 @@
 #define IDC_GENLOCK_FIELDS              1873
 #define IDC_GENLOCK_FILTER              1874
 #define IDC_GENLOCK_CONTROL             1890
+#define IDD_GENLOCKLD                   409
+#define IDC_GENLOCK_LD                  1891
+#define IDC_GENLOCK_LD_OFFSET           1892
+#define IDC_GENLOCK_LD_DISCID           1893
+#define IDC_GENLOCK_LD_STOPS            1894
+#define IDC_GENLOCK_LD_STOPSSELECT      1895
+#define IDC_GENLOCK_AUDIO_MUTE          1896
 #define IDS_READONLYCONFIRMATION        421
 #define IDS_SCREEN_NATIVELACE           422
 #define IDS_PORT_AUTOFIRE_TOGGLENOAF    423
@@ -1461,9 +1468,9 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
 #define _APS_3D_CONTROLS                     1
-#define _APS_NEXT_RESOURCE_VALUE        408
+#define _APS_NEXT_RESOURCE_VALUE        410
 #define _APS_NEXT_COMMAND_VALUE         40054
-#define _APS_NEXT_CONTROL_VALUE         1891
+#define _APS_NEXT_CONTROL_VALUE         1897
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

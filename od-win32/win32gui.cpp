@@ -2868,6 +2868,7 @@ static void setdpath (const TCHAR *name, const TCHAR *path)
 // flag = 18 for Tape image
 // flag = 20 for genlock image
 // flag = 21 for genlock video
+// flag = 25 for genlock LaserDisc picture stop table
 // flag = 22 for floppy replacement (missing statefile)
 // fags = 23 for hdf geometry (load)
 // fags = 24 for hdf geometry (save)
@@ -3002,6 +3003,7 @@ int DiskSelection_2 (HWND hDlg, WPARAM wParam, int flag, struct uae_prefs *prefs
 			guid = &diskselectionguids[8];
 			break;
 		case 21:
+		case 25:
 			fetch_path(_T("GenlockVideoPath"), init_path, sizeof(init_path) / sizeof(TCHAR));
 			guid = &diskselectionguids[9];
 			break;
@@ -3154,6 +3156,9 @@ int DiskSelection_2 (HWND hDlg, WPARAM wParam, int flag, struct uae_prefs *prefs
 #else
 		_tcscpy(szTitle, _T("Select genlock video"));
 #endif
+		break;
+	case 25:
+		_tcscpy(szTitle, _T("Select LaserDisc picture stop table"));
 		break;
 	case 23:
 	case 24:
@@ -3453,7 +3458,7 @@ int DiskSelection_2 (HWND hDlg, WPARAM wParam, int flag, struct uae_prefs *prefs
 					*amiga_path = 0;
 					setdpath(_T("GenlockImagePath"), openFileName.lpstrFile);
 				}
-			} else if (flag == 21) {
+			} else if (flag == 21 || flag == 25) {
 				amiga_path = _tcsstr(openFileName.lpstrFile, openFileName.lpstrFileTitle);
 				if (amiga_path && amiga_path != openFileName.lpstrFile) {
 					*amiga_path = 0;
@@ -8347,6 +8352,8 @@ static void enable_for_chipsetdlg (HWND hDlg)
 	ew(hDlg, IDC_GENLOCK_ALPHA, genlock ? TRUE : FALSE);
 	ew(hDlg, IDC_GENLOCK_KEEP_ASPECT, genlock ? TRUE : FALSE);
 	ew(hDlg, IDC_GENLOCK_CONTROL, genlock ? TRUE : FALSE);
+	// the LaserDisc options only reach the Pioneer player model (pioneerld.cpp)
+	ew(hDlg, IDC_GENLOCK_LD, genlock && workprefs.genlock_image >= 8 ? TRUE : FALSE);
 #ifdef VIDEOGRAB_LIBAV
 	{
 		bool media = genlock_mode_is_media(workprefs.genlock_image);
@@ -9561,6 +9568,7 @@ static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wPara
 		genlock_fill_combo(hDlg, IDC_GENLOCK_DEINT, genlock_deint_names, workprefs.genlock_video_deinterlace);
 		genlock_fill_combo(hDlg, IDC_GENLOCK_FIELDS, genlock_fields_names, workprefs.genlock_video_fields);
 		SetDlgItemText(hDlg, IDC_GENLOCK_FILTER, workprefs.genlock_video_filter);
+		CheckDlgButton(hDlg, IDC_GENLOCK_AUDIO_MUTE, workprefs.genlock_audio_mute);
 		return TRUE;
 	case WM_COMMAND:
 		switch (LOWORD(wParam))
@@ -9578,6 +9586,7 @@ static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wPara
 			if (r != CB_ERR)
 				workprefs.genlock_video_fields = (int)r;
 			GetDlgItemText(hDlg, IDC_GENLOCK_FILTER, workprefs.genlock_video_filter, sizeof workprefs.genlock_video_filter / sizeof(TCHAR));
+			workprefs.genlock_audio_mute = ischecked(hDlg, IDC_GENLOCK_AUDIO_MUTE);
 			CustomDialogClose(hDlg, 1);
 			return TRUE;
 		}
@@ -9612,6 +9621,83 @@ static void genlock_video_dialog(HWND hDlg)
 	RESTORECDS;
 }
 #endif
+
+static INT_PTR CALLBACK GenlockLDDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	bool handled;
+	INT_PTR v = commonproc(hDlg, msg, wParam, lParam, &handled);
+	if (handled) {
+		return v;
+	}
+	switch (msg)
+	{
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		return TRUE;
+	case WM_CLOSE:
+		CustomDialogClose(hDlg, 0);
+		DestroyWindow(hDlg);
+		return TRUE;
+	case WM_INITDIALOG:
+		SetDlgItemInt(hDlg, IDC_GENLOCK_LD_OFFSET, workprefs.genlock_ld_offset, TRUE);
+		xSendDlgItemMessage(hDlg, IDC_GENLOCK_LD_DISCID, EM_LIMITTEXT, sizeof workprefs.genlock_ld_discid / sizeof(TCHAR) - 1, 0);
+		SetDlgItemText(hDlg, IDC_GENLOCK_LD_DISCID, workprefs.genlock_ld_discid);
+		xSendDlgItemMessage(hDlg, IDC_GENLOCK_LD_STOPS, EM_LIMITTEXT, sizeof workprefs.genlock_ld_stops / sizeof(TCHAR) - 1, 0);
+		SetDlgItemText(hDlg, IDC_GENLOCK_LD_STOPS, workprefs.genlock_ld_stops);
+		return TRUE;
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case IDC_GENLOCK_LD_STOPSSELECT:
+		{
+			TCHAR cur[MAX_DPATH], path[MAX_DPATH];
+			GetDlgItemText(hDlg, IDC_GENLOCK_LD_STOPS, cur, sizeof cur / sizeof(TCHAR));
+			path[0] = 0;
+			if (DiskSelection(hDlg, IDC_GENLOCK_LD_STOPSSELECT, 25, &workprefs, cur[0] ? cur : NULL, path) && path[0])
+				SetDlgItemText(hDlg, IDC_GENLOCK_LD_STOPS, path);
+			return TRUE;
+		}
+		case IDOK:
+		{
+			BOOL ok = FALSE;
+			int offset = (int)GetDlgItemInt(hDlg, IDC_GENLOCK_LD_OFFSET, &ok, TRUE);
+			if (ok)	// not a number: keep the old value
+				workprefs.genlock_ld_offset = offset;
+			GetDlgItemText(hDlg, IDC_GENLOCK_LD_DISCID, workprefs.genlock_ld_discid, sizeof workprefs.genlock_ld_discid / sizeof(TCHAR));
+			GetDlgItemText(hDlg, IDC_GENLOCK_LD_STOPS, workprefs.genlock_ld_stops, sizeof workprefs.genlock_ld_stops / sizeof(TCHAR));
+			CustomDialogClose(hDlg, 1);
+			return TRUE;
+		}
+		case IDCANCEL:
+			CustomDialogClose(hDlg, 0);
+			return TRUE;
+		}
+		break;
+	}
+	return FALSE;
+}
+
+static void genlock_ld_dialog(HWND hDlg)
+{
+	SAVECDS;
+	HWND hwnd = CustomCreateDialog(IDD_GENLOCKLD, hDlg, GenlockLDDialogProc, &cdstate);
+	if (hwnd != NULL) {
+		while (cdstate.active) {
+			MSG msg;
+			int ret;
+			WaitMessage();
+			while ((ret = GetMessage(&msg, NULL, 0, 0))) {
+				if (ret == -1)
+					break;
+				if (!IsWindow(hwnd) || !IsDialogMessage(hwnd, &msg)) {
+					TranslateMessage(&msg);
+					DispatchMessage(&msg);
+				}
+			}
+		}
+	}
+	RESTORECDS;
+}
 
 static void appendkbmcurom(TCHAR *s, bool hasrom)
 {
@@ -9827,6 +9913,9 @@ static INT_PTR CALLBACK ChipsetDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPAR
 				genlock_video_dialog(hDlg);
 				break;
 #endif
+			case IDC_GENLOCK_LD:
+				genlock_ld_dialog(hDlg);
+				break;
 			case IDC_BLITWAIT:
 			if (workprefs.immediate_blits) {
 				workprefs.immediate_blits = false;
