@@ -89,6 +89,7 @@
 #endif
 #include "specialmonitors.h"
 #include "gayle.h"
+#include "gdb_server.h"
 #ifdef FLOPPYBRIDGE
 #include "floppybridge/floppybridge_abstract.h"
 #include "floppybridge/floppybridge_lib.h"
@@ -13373,6 +13374,14 @@ static void values_to_miscdlg (HWND hDlg)
 		misc_addpri(hDlg, IDC_ACTIVE_PRIORITY, workprefs.win32_active_capture_priority);
 		misc_addpri(hDlg, IDC_INACTIVE_PRIORITY, workprefs.win32_inactive_priority);
 		misc_addpri(hDlg, IDC_MINIMIZED_PRIORITY, workprefs.win32_iconified_priority);
+#ifdef GDBSERVER
+		CheckDlgButton(hDlg, IDC_GDBSERVER, (workprefs.debugging_features & DEBUG_FEATURE_GDBSERVER) != 0);
+		xSendDlgItemMessage(hDlg, IDC_GDBSERVER_PORT, EM_LIMITTEXT, 5, 0);
+		SetDlgItemInt(hDlg, IDC_GDBSERVER_PORT, workprefs.gdb_port, FALSE);
+#else
+		ew(hDlg, IDC_GDBSERVER, FALSE);
+		ew(hDlg, IDC_GDBSERVER_PORT, FALSE);
+#endif
 
 	}
 }
@@ -13633,6 +13642,21 @@ static INT_PTR MiscDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 			misc_getpri (hDlg, IDC_ACTIVE_PRIORITY, &workprefs.win32_active_capture_priority);
 			misc_getpri (hDlg, IDC_INACTIVE_PRIORITY, &workprefs.win32_inactive_priority);
 			misc_getpri (hDlg, IDC_MINIMIZED_PRIORITY, &workprefs.win32_iconified_priority);
+#ifdef GDBSERVER
+			if (ischecked(hDlg, IDC_GDBSERVER))
+				workprefs.debugging_features |= DEBUG_FEATURE_GDBSERVER;
+			else
+				workprefs.debugging_features &= ~DEBUG_FEATURE_GDBSERVER;
+			if (LOWORD(wParam) == IDC_GDBSERVER_PORT && (HIWORD(wParam) == EN_CHANGE || HIWORD(wParam) == EN_KILLFOCUS)) {
+				// the same rule as gdb_port in cfgfile.cpp: 1..65535, anything else is 2345
+				BOOL ok = FALSE;
+				UINT port = GetDlgItemInt(hDlg, IDC_GDBSERVER_PORT, &ok, FALSE);
+				workprefs.gdb_port = ok && port >= 1 && port <= 65535 ? (int)port : 2345;
+				// show what was kept once the user leaves the box, not while typing
+				if (HIWORD(wParam) == EN_KILLFOCUS)
+					SetDlgItemInt(hDlg, IDC_GDBSERVER_PORT, workprefs.gdb_port, FALSE);
+			}
+#endif
 		}
 
 		switch(wParam)
