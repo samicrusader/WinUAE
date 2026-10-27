@@ -11,6 +11,7 @@
 
 #include <ctype.h>
 #include <assert.h>
+#include <math.h>
 
 #include "options.h"
 #include "xwin.h"
@@ -2649,6 +2650,266 @@ end:
 	return ok;
 }
 
+/*
+ * genlock_raster: composite straight into a BT.601 525-line raster.
+ *
+ * The normal path composites at the Amiga buffer's resolution (the video
+ * scaled to the blanking area first) and leaves the D3D scaler to resample
+ * the result to the window, so the video is scaled twice. Here each source
+ * is resampled once, into 720 samples x 480 (or 486) lines at 13.5 MHz:
+ *
+ * - NTSC: one line is 227.5 colour clocks = 1820 superhires pixels = 858
+ *   samples, so a sample is 1820/858 superhires pixels (858/910 of a hires
+ *   pixel). Each sample averages the Amiga pixels it covers, keyed per pixel,
+ *   so a key edge inside a sample comes out as a mix, like a real switch
+ *   followed by a band limit.
+ * - The 720 samples are centred on the genlock area (the blanking window
+ *   do_genlock() fills with video, starting at superhires 224).
+ * - Lines are not resampled: raster line 0 of the 486-line raster is the
+ *   first line after vertical blanking (frame line 2 * ystart, where
+ *   do_genlock's area loop starts), the 480-line raster drops 4 lines at the
+ *   top and 2 at the bottom of that (SMPTE RP 202 / DV). The crop is even,
+ *   so the field each line belongs to does not change.
+ * - The video is asked for once at (area width in samples) x 480, so a
+ *   480-line source is only scaled horizontally; its row 0 is 486-line 4.
+ *   genlock_offset_x/y move it in samples/lines; genlock_aspect and
+ *   genlock_scale are not used.
+ *
+ * The result goes into the top left of the output buffer with hardwired
+ * positioning, so the scaler shows exactly 720xN (see win32_scaler.cpp,
+ * specialmode with a static or integer autoscale).
+ */
+#define GENLOCK_RASTER_W 720
+#define GENLOCK_RASTER_TAPS 4
+#define GENLOCK_RASTER_LINE_SHRES 1820
+#define GENLOCK_RASTER_LINE_SAMPLES 858
+#define GENLOCK_RASTER_AREA_X0 224
+
+struct genlock_raster_tap
+{
+	int x[GENLOCK_RASTER_TAPS];
+	int w[GENLOCK_RASTER_TAPS]; // 1/256ths, they sum to 256
+	int n;
+};
+static struct genlock_raster_tap genlock_raster_taps[GENLOCK_RASTER_W];
+static int genlock_raster_geom[6] = { -1, -1, -1, -1, -1, -1 };
+static bool genlock_raster_clip_logged;
+
+struct genlock_raster_src
+{
+	int gmode, vgain, opacity;
+	bool faded, zclken;
+	int mix1, mix2;
+	uae_u8 amix1, amix2;
+	uae_u8 *image;
+	int iw, ih, pitch, pixbytes, ri, gi, bi;
+	bool upsidedown;
+	int xstart, xend, ystart, yend;
+};
+
+static void genlock_raster_build_taps(int xoffset, int xchange, int area)
+{
+	const double k = (double)GENLOCK_RASTER_LINE_SHRES / GENLOCK_RASTER_LINE_SAMPLES;
+	const double c = GENLOCK_RASTER_AREA_X0 + area / 2.0;
+	for (int s = 0; s < GENLOCK_RASTER_W; s++) {
+		struct genlock_raster_tap *t = &genlock_raster_taps[s];
+		// the sample's span in buffer pixels
+		double a = (c + (s - GENLOCK_RASTER_W / 2) * k - xoffset) / xchange;
+		double b = a + k / xchange;
+		int n = 0, sum = 0, big = 0;
+		for (int x = (int)floor(a); x < b && n < GENLOCK_RASTER_TAPS; x++) {
+			double lo = a > x ? a : x;
+			double hi = b < x + 1 ? b : x + 1;
+			if (hi <= lo)
+				continue;
+			t->x[n] = x;
+			t->w[n] = (int)((hi - lo) / (b - a) * 256.0 + 0.5);
+			sum += t->w[n];
+			if (t->w[n] > t->w[big])
+				big = n;
+			n++;
+		}
+		if (n)
+			t->w[big] += 256 - sum;
+		t->n = n;
+	}
+}
+
+static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, const struct genlock_raster_src *g)
+{
+	struct vidbuf_description *avidinfo = &adisplays[dst->monitor_id].gfxvidinfo;
+	const int rh = currprefs.genlock_raster == 2 ? 486 : 480;
+	const int crop = rh == 486 ? 0 : 4;
+	const int xchange = avidinfo->xchange > 0 ? avidinfo->xchange : 1;
+	const int vdbl = avidinfo->ychange == 1 ? 0 : 1;
+	const int area = g->xend - g->xstart;
+
+	// the video: the area's width in samples, 480 lines, row 0 on 486-line 4
+	const int vw = (area * GENLOCK_RASTER_LINE_SAMPLES + GENLOCK_RASTER_LINE_SHRES / 2) / GENLOCK_RASTER_LINE_SHRES;
+	const int vh = 480;
+	const int vx0 = (GENLOCK_RASTER_W - vw) / 2 + currprefs.genlock_offset_x;
+	const int vy0 = 4 - crop + currprefs.genlock_offset_y;
+	if (vw < 16)
+		return false;
+
+#ifdef VIDEOGRAB_LIBAV
+	if (genlock_video) {
+		setvideograbtarget(vw, vh, false);
+	}
+#endif
+
+	// raster line 0 as a frame line (y * 2 + field, as do_genlock's loop
+	// counts them): the first line out of vertical blanking. ystart is in
+	// field lines; do_genlock's video placement (ystart - minfirstline) mixes
+	// field and frame lines and lands inside the blanking (20 frame lines
+	// early with yoffset 4, ystart 18, minfirstline 6).
+	const int f0 = g->ystart * 2 + crop;
+
+	if (genlock_raster_geom[0] != src->xoffset || genlock_raster_geom[1] != xchange || genlock_raster_geom[2] != area ||
+		genlock_raster_geom[3] != rh || genlock_raster_geom[4] != f0 || genlock_raster_geom[5] != src->inwidth) {
+		genlock_raster_geom[0] = src->xoffset;
+		genlock_raster_geom[1] = xchange;
+		genlock_raster_geom[2] = area;
+		genlock_raster_geom[3] = rh;
+		genlock_raster_geom[4] = f0;
+		genlock_raster_geom[5] = src->inwidth;
+		genlock_raster_build_taps(src->xoffset, xchange, area);
+		genlock_raster_clip_logged = false;
+		const double k = (double)GENLOCK_RASTER_LINE_SHRES / GENLOCK_RASTER_LINE_SAMPLES;
+		double r0 = GENLOCK_RASTER_AREA_X0 + area / 2.0 - GENLOCK_RASTER_W / 2 * k;
+		write_log(_T("GENLOCK: raster 720x%d: area %d-%d (%d shres, %d samples), raster shres %.1f-%.1f, buffer shres %d-%d (x%d), ")
+			_T("raster line 0 = frame line %d (yoffset %d ystart %d minfirstline %d), video %dx%d at %d,%d\n"),
+			rh, g->xstart, g->xend, area, vw, r0, r0 + GENLOCK_RASTER_W * k,
+			src->xoffset, src->xoffset + src->inwidth * xchange, xchange,
+			f0, src->yoffset, g->ystart, minfirstline, vw, vh, vx0, vy0);
+	}
+
+	int w = GENLOCK_RASTER_W, h = rh;
+	if (w > dst->width_allocated)
+		w = dst->width_allocated;
+	if (h > dst->height_allocated)
+		h = dst->height_allocated;
+	if ((w < GENLOCK_RASTER_W || h < rh) && !genlock_raster_clip_logged) {
+		genlock_raster_clip_logged = true;
+		write_log(_T("GENLOCK: raster clipped to %dx%d by a %dx%d output buffer\n"), w, h, dst->width_allocated, dst->height_allocated);
+	}
+	if (w < 16 || h < 16)
+		return false;
+	dst->inwidth = dst->outwidth = w;
+	dst->inheight = dst->outheight = h;
+	dst->hardwiredpositioning = true;
+
+	// video scale when the frame did not come at the size asked for
+	int sx = 65536, sy = 65536;
+	if (g->image && !genlock_video_prescaled) {
+		sx = g->iw * 65536 / vw;
+		sy = g->ih * 65536 / vh;
+	}
+
+	// with interlace scanlines do_genlock draws only the current field
+	const bool onefield = interlace_seen && currprefs.gfx_iscanlines;
+	const int field = lof_store ? 1 : 0;
+
+	for (int r = 0; r < h; r++) {
+		const int f = f0 + r;
+		if (onefield && (f & 1) != field)
+			continue;
+		uae_u8 *d = dst->bufmem + r * dst->rowbytes;
+		const int yoff = (f - src->yoffset) >> vdbl;
+		uae_u8 *line = NULL, *lg = NULL;
+		if (f >= src->yoffset && yoff < src->inheight) {
+			line = src->bufmem + yoff * src->rowbytes;
+			lg = get_row_genlock(0, yoff);
+		}
+		if (!line || !lg) {
+			memset(d, 0, w * 4);
+			continue;
+		}
+		uae_u8 *vrow = NULL;
+		const int j = r + crop - 4 - currprefs.genlock_offset_y;
+		if (g->image && j >= 0 && j < vh) {
+			int gy = j * sy / 65536;
+			if (gy < g->ih) {
+				if (g->upsidedown)
+					gy = (g->ih - 1) - gy;
+				vrow = g->image + gy * g->pitch;
+			}
+		}
+		for (int s = 0; s < w; s++) {
+			// the video at this sample
+			int vr, vg, vb;
+			if (genlock_error) {
+				vr = 0x00;
+				vg = 0x00;
+				vb = 0xdd;
+			} else if (genlock_blank) {
+				vr = vg = vb = 0;
+			} else if (g->image) {
+				vr = vg = vb = 0;
+				const int i = s - vx0;
+				if (vrow && i >= 0 && i < vw) {
+					const int gx = i * sx / 65536;
+					if (gx < g->iw) {
+						const uae_u8 *p = vrow + gx * g->pixbytes;
+						vr = p[g->ri];
+						vg = p[g->gi];
+						vb = p[g->bi];
+					}
+				}
+			} else {
+				vr = vg = vb = get_noise();
+			}
+			if (g->vgain < 256) {
+				vr = vr * g->vgain / 256;
+				vg = vg * g->vgain / 256;
+				vb = vb * g->vgain / 256;
+			}
+			// the Amiga pixels under it, each keyed on its own
+			const struct genlock_raster_tap *t = &genlock_raster_taps[s];
+			int ar = 0, ag = 0, ab = 0, aa = 0;
+			for (int k = 0; k < t->n; k++) {
+				const int x = t->x[k];
+				int r1 = 0, g1 = 0, b1 = 0, a1 = 0;
+				if (x >= 0 && x < src->inwidth) {
+					const uae_u8 key = lg[x];
+					uae_u8 *sp = line + x * src->pixbytes;
+					// ZCLKEN toggles every hires pixel
+					const bool ztoggle = currprefs.gfx_resolution >= RES_HIRES ? (x & 1) != 0 : ((x >> 1) & 1) != 0;
+					const bool keyed = g->gmode == GENLOCK_CTRL_EXTERNAL || (!g->zclken && is_transparent(key)) || (g->zclken && ztoggle);
+					if (key == 0xff) {
+						// nothing drawn here
+					} else if (g->gmode == GENLOCK_CTRL_EXTERNAL || g->faded || (g->gmode == GENLOCK_CTRL_OVERLAY && keyed)) {
+						a1 = g->amix2;
+						r1 = vr;
+						g1 = vg;
+						b1 = vb;
+						if (!keyed) {
+							r1 = (g->opacity * FVR(src, sp) + (256 - g->opacity) * r1) / 256;
+							g1 = (g->opacity * FVG(src, sp) + (256 - g->opacity) * g1) / 256;
+							b1 = (g->opacity * FVB(src, sp) + (256 - g->opacity) * b1) / 256;
+						} else if (g->mix2 && g->gmode == GENLOCK_CTRL_OVERLAY) {
+							r1 = (g->mix1 * r1 + g->mix2 * FVR(src, sp)) / 256;
+							g1 = (g->mix1 * g1 + g->mix2 * FVG(src, sp)) / 256;
+							b1 = (g->mix1 * b1 + g->mix2 * FVB(src, sp)) / 256;
+						}
+					} else {
+						r1 = FVR(src, sp);
+						g1 = FVG(src, sp);
+						b1 = FVB(src, sp);
+						a1 = 0xff;
+					}
+				}
+				ar += r1 * t->w[k];
+				ag += g1 * t->w[k];
+				ab += b1 * t->w[k];
+				aa += a1 * t->w[k];
+			}
+			PRGBA(dst, d + s * 4, (uae_u8)(ar >> 8), (uae_u8)(ag >> 8), (uae_u8)(ab >> 8), (uae_u8)(aa >> 8));
+		}
+	}
+	return true;
+}
+
 static bool do_genlock(struct vidbuffer *src, struct vidbuffer *dst, bool doublelines, int oddlines, bool zclken)
 {
 	struct vidbuf_description *avidinfo = &adisplays[dst->monitor_id].gfxvidinfo;
@@ -2914,6 +3175,33 @@ skip:
 		return false;
 	}
 
+	if (currprefs.genlock_raster && currprefs.ntscmode) {
+		struct genlock_raster_src gs;
+		gs.gmode = gmode;
+		gs.vgain = vgain;
+		gs.opacity = opacity;
+		gs.faded = faded;
+		gs.zclken = zclken;
+		gs.mix1 = mix1;
+		gs.mix2 = mix2;
+		gs.amix1 = amix1;
+		gs.amix2 = amix2;
+		gs.image = genlock_image;
+		gs.iw = genlock_image_width;
+		gs.ih = genlock_image_height;
+		gs.pitch = genlock_image_pitch;
+		gs.pixbytes = genlock_image_pixbytes;
+		gs.ri = genlock_image_red_index;
+		gs.gi = genlock_image_green_index;
+		gs.bi = genlock_image_blue_index;
+		gs.upsidedown = genlock_image_upsidedown;
+		gs.xstart = xstart;
+		gs.xend = xend;
+		gs.ystart = ystart;
+		gs.yend = yend;
+		return genlock_raster_draw(src, dst, &gs);
+	}
+
 	int deltax = 65536;
 	int deltay = 65536;
 
@@ -3069,6 +3357,10 @@ skip:
 bool emulate_genlock(struct vidbuffer *src, struct vidbuffer *dst, bool zclken)
 {
 	bool v;
+	if (currprefs.genlock_raster && currprefs.ntscmode) {
+		// one call fills the whole raster (or the current field of it)
+		return do_genlock(src, dst, false, lof_store ? 1 : 0, zclken);
+	}
 	if (interlace_seen) {
 		if (currprefs.gfx_iscanlines) {
 			v = do_genlock(src, dst, false, lof_store ? 1 : 0, zclken);

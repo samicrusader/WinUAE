@@ -691,6 +691,7 @@ struct uae_prefs {
 	uae_u8 ecs_genlock_features_plane_mask;
 	bool genlock_alpha;
 	int genlock_control; // GENLOCK_CONTROL_*
+	int genlock_raster; // 0 off, 1 BT.601 720x480, 2 BT.601 720x486 (NTSC only)
 	TCHAR genlock_image_file[MAX_DPATH];
 	TCHAR genlock_video_file[MAX_DPATH];
 	int genlock_ld_offset;
