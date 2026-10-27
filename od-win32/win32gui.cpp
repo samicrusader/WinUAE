@@ -8346,6 +8346,7 @@ static void enable_for_chipsetdlg (HWND hDlg)
 	ew(hDlg, IDC_GENLOCKMIX, genlock ? TRUE : FALSE);
 	ew(hDlg, IDC_GENLOCK_ALPHA, genlock ? TRUE : FALSE);
 	ew(hDlg, IDC_GENLOCK_KEEP_ASPECT, genlock ? TRUE : FALSE);
+	ew(hDlg, IDC_GENLOCK_CONTROL, genlock ? TRUE : FALSE);
 #ifdef VIDEOGRAB_LIBAV
 	{
 		bool media = genlock_mode_is_media(workprefs.genlock_image);
@@ -9365,6 +9366,7 @@ static void values_to_chipsetdlg (HWND hDlg)
 	xSendDlgItemMessage(hDlg, IDC_GENLOCKMODE, CB_SETCURSEL, workprefs.genlock_image, 0);
 #endif
 	xSendDlgItemMessage(hDlg, IDC_GENLOCKMIX, CB_SETCURSEL, workprefs.genlock_mix / 25, 0);
+	xSendDlgItemMessage(hDlg, IDC_GENLOCK_CONTROL, CB_SETCURSEL, workprefs.genlock_control, 0);
 	CheckDlgButton(hDlg, IDC_GENLOCK_ALPHA, workprefs.genlock_alpha);
 	CheckDlgButton(hDlg, IDC_GENLOCK_KEEP_ASPECT, workprefs.genlock_aspect);
 }
@@ -9491,6 +9493,9 @@ static void values_from_chipsetdlg (HWND hDlg, UINT msg, WPARAM wParam, LPARAM l
 		if (workprefs.genlock_mix >= 250)
 			workprefs.genlock_mix = 255;
 	}
+	nn = xSendDlgItemMessage(hDlg, IDC_GENLOCK_CONTROL, CB_GETCURSEL, 0, 0);
+	if (nn != CB_ERR)
+		workprefs.genlock_control = nn;
 }
 
 static void setgenlock(HWND hDlg)
@@ -9717,6 +9722,11 @@ static INT_PTR CALLBACK ChipsetDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPAR
 			_stprintf(buffer, _T("%d%%"), (10 - i) * 10);
 			xSendDlgItemMessage(hDlg, IDC_GENLOCKMIX, CB_ADDSTRING, 0, (LPARAM)buffer);
 		}
+		// rows are the genlock_control values, GENLOCK_CONTROL_NONE / _SERIAL / _FADER
+		xSendDlgItemMessage(hDlg, IDC_GENLOCK_CONTROL, CB_RESETCONTENT, 0, 0);
+		xSendDlgItemMessage(hDlg, IDC_GENLOCK_CONTROL, CB_ADDSTRING, 0, (LPARAM)_T("None"));
+		xSendDlgItemMessage(hDlg, IDC_GENLOCK_CONTROL, CB_ADDSTRING, 0, (LPARAM)_T("Serial (mode + fader)"));
+		xSendDlgItemMessage(hDlg, IDC_GENLOCK_CONTROL, CB_ADDSTRING, 0, (LPARAM)_T("Fader only"));
 
 		xSendDlgItemMessage(hDlg, IDC_MONITOREMU, CB_RESETCONTENT, 0, 0);
 		xSendDlgItemMessage(hDlg, IDC_MONITOREMU, CB_ADDSTRING, 0, (LPARAM)_T("-"));

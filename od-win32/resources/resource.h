@@ -420,6 +420,7 @@
 #define IDC_GENLOCK_DEINT               1872
 #define IDC_GENLOCK_FIELDS              1873
 #define IDC_GENLOCK_FILTER              1874
+#define IDC_GENLOCK_CONTROL             1890
 #define IDS_READONLYCONFIRMATION        421
 #define IDS_SCREEN_NATIVELACE           422
 #define IDS_PORT_AUTOFIRE_TOGGLENOAF    423
@@ -1462,7 +1463,7 @@
 #define _APS_3D_CONTROLS                     1
 #define _APS_NEXT_RESOURCE_VALUE        408
 #define _APS_NEXT_COMMAND_VALUE         40054
-#define _APS_NEXT_CONTROL_VALUE         1890
+#define _APS_NEXT_CONTROL_VALUE         1891
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
