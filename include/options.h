@@ -698,8 +698,8 @@ struct uae_prefs {
 	bool genlock_audio_mute;
 	TCHAR genlock_ld_stops[MAX_DPATH];
 	TCHAR genlock_ld_discid[16];
-	TCHAR uvserial_port[4][256];		/* UV card unit n backend: TCP://host:port listener ("" = none) */
-	TCHAR uvserial_cd_feed[4][256];		/* UV card unit n CD level feed listener host:port ("" = CD follows the client) */
+	TCHAR uvserial_port[4][256];		/* UV card unit n backend: TCP://host:port[/connect[/noreconnect]] or MODEM://[host:port][/raw][/speed=N] ("" = none) */
+	TCHAR uvserial_cd_feed[4][256];		/* UV card unit n CD level feed host:port[/connect] ("" = CD follows the client or the modem) */
 	TCHAR genlock_font[MAX_DPATH];
 	TCHAR genlock_stream[MAX_DPATH];		/* live source URL (genlockmode=stream, FFmpeg backend) */
 	int genlock_video_scaler;			/* 0 none (point-sampled in do_genlock), else swscale algorithm */

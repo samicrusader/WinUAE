@@ -32,6 +32,8 @@
 #include "debug.h"
 #include "uvserial.h"
 #include "pioneerld.h"
+#include "sersock.h"
+#include "sermodem.h"
 
 #define BOARD_SIZE 65536
 #define UVSER_PORTS 4
@@ -58,7 +60,8 @@ int log_uvserial = 1;
 /* what a port is wired to */
 #define BACKEND_NONE	0
 #define BACKEND_LD		1
-#define BACKEND_TCP		2		/* uvserial_port<n>=TCP://host:port, e.g. a modem for sts on unit 3 */
+#define BACKEND_TCP		2		/* uvserial_port<n>=TCP://host:port[/connect[/noreconnect]] */
+#define BACKEND_MODEM	3		/* uvserial_port<n>=MODEM://[host:port][/raw][/speed=N]: a Hayes modem, e.g. for sts on unit 3 */
 
 struct uvchannel
 {
@@ -71,8 +74,8 @@ struct uvchannel
 	uae_u8 sr;
 	uae_u8 rxfifo[RXFIFO_SIZE];
 	int rxhead, rxtail;
-	bool cdfeed;			/* CD comes from a level feed listener */
-	bool cd;				/* carrier detect asserted (TCP backend only) */
+	bool cdfeed;			/* CD comes from a level feed (uvserial_cd_feed<n>) */
+	bool cd;				/* carrier detect asserted (TCP and modem backends only) */
 	double rxbudget;		/* bytes the line could have delivered since the last poll */
 };
 
@@ -91,6 +94,16 @@ struct uvduart
 static struct uvduart duart[2];
 static bool uvserial_active;
 static int poll_divider;
+
+/* What is plugged into each unit: the sockets and modems are outside the
+   Amiga, so they live across Amiga resets (a call in progress survives one)
+   and are only opened again when the configured address changes. */
+static struct sersock *unit_sock[UVSER_PORTS];
+static struct sersock *unit_cdsock[UVSER_PORTS];
+static struct sermodem *unit_modem[UVSER_PORTS];
+static TCHAR unit_spec[UVSER_PORTS][256];
+static TCHAR unit_cdspec[UVSER_PORTS][256];
+static bool unit_cdlevel[UVSER_PORTS];		/* last level the CD feed sent */
 
 static const int baudtable_set2[16] = {
 	75, 110, 134, 150, 300, 600, 1200, 1050,
@@ -180,9 +193,9 @@ static void uvserial_rethink(void)
 static uae_u8 input_port(struct uvduart *d)
 {
 	uae_u8 ip = 0;
-	if (d->ch[0].backend == BACKEND_TCP && !d->ch[0].cd)
+	if ((d->ch[0].backend == BACKEND_TCP || d->ch[0].backend == BACKEND_MODEM) && !d->ch[0].cd)
 		ip |= 0x10;
-	if (d->ch[1].backend == BACKEND_TCP && !d->ch[1].cd)
+	if ((d->ch[1].backend == BACKEND_TCP || d->ch[1].backend == BACKEND_MODEM) && !d->ch[1].cd)
 		ip |= 0x20;
 	return ip;
 }
@@ -196,15 +209,18 @@ static void set_cd(struct uvchannel *c, bool on)
 		write_log(_T("UVSER: port %d carrier %s\n"), c->port, on ? _T("on") : _T("off"));
 }
 
-/* receive pacing: the 68681 delivers a byte per character time at the programmed rate */
-static double rx_bytes_per_poll(struct uvchannel *c, struct uvduart *d)
+static int rx_baud(struct uvchannel *c, struct uvduart *d)
 {
 	const int *tbl = (d->acr & 0x80) ? baudtable_set2 : baudtable_set1;
 	int baud = tbl[(c->csr >> 4) & 15];
-	if (baud <= 0)
-		baud = 19200;
+	return baud > 0 ? baud : 19200;
+}
+
+/* receive pacing: the 68681 delivers a byte per character time at the programmed rate */
+static double rx_bytes_per_poll(struct uvchannel *c, struct uvduart *d)
+{
 	/* polled every 64 lines, ~15700 lines per second */
-	return baud / 10.0 * 64.0 / 15700.0;
+	return rx_baud(c, d) / 10.0 * 64.0 / 15700.0;
 }
 
 static void backend_write(struct uvchannel *c, uae_u8 v)
@@ -215,7 +231,10 @@ static void backend_write(struct uvchannel *c, uae_u8 v)
 		pioneerld_put(v);
 		break;
 	case BACKEND_TCP:
-		uvsock_write(c->port, &v, 1);
+		sersock_write(unit_sock[c->port], &v, 1);
+		break;
+	case BACKEND_MODEM:
+		sermodem_write(unit_modem[c->port], &v, 1);
 		break;
 	default:
 		if (log_uvserial > 1)
@@ -229,20 +248,32 @@ static void backend_poll(struct uvchannel *c, struct uvduart *d)
 	switch (c->backend)
 	{
 	case BACKEND_TCP:
+	case BACKEND_MODEM:
 	{
 		uae_u8 buf[64];
 		int n;
+		struct sersock *s = unit_sock[c->port];
+		struct sermodem *m = unit_modem[c->port];
+		if (m) {
+			sermodem_set_dte_rate(m, rx_baud(c, d));
+			sermodem_poll(m);
+		} else {
+			sersock_poll(s);
+		}
 		if (c->cdfeed) {
-			while ((n = uvsock_read(4 + c->port, buf, sizeof buf)) > 0) {
+			struct sersock *cs = unit_cdsock[c->port];
+			sersock_poll(cs);
+			while ((n = sersock_read(cs, buf, sizeof buf)) > 0) {
 				for (int i = 0; i < n; i++) {		/* the last level byte wins */
 					if (buf[i] == '1' || buf[i] == 0x01)
-						set_cd(c, true);
+						unit_cdlevel[c->port] = true;
 					else if (buf[i] == '0' || buf[i] == 0x00)
-						set_cd(c, false);
+						unit_cdlevel[c->port] = false;
 				}
 			}
+			set_cd(c, unit_cdlevel[c->port]);
 		} else {
-			set_cd(c, uvsock_connected(c->port));
+			set_cd(c, m ? sermodem_carrier(m) : sersock_connected(s));
 		}
 		if (!c->rxen) {
 			c->rxbudget = 0;		/* receiver off: leave the bytes in the socket */
@@ -257,7 +288,7 @@ static void backend_poll(struct uvchannel *c, struct uvduart *d)
 			want = room;
 		if (want <= 0)
 			break;
-		n = uvsock_read(c->port, buf, want);
+		n = m ? sermodem_read(m, buf, want) : sersock_read(s, buf, want);
 		c->rxbudget -= n;
 		for (int i = 0; i < n; i++)
 			rxfifo_put(c, buf[i]);
@@ -523,9 +554,9 @@ static void uvserial_hard_reset(int hardreset)
 			struct uvchannel *c = &d->ch[j];
 			c->port = i * 2 + j;
 			c->backend = (c->port == 2) ? BACKEND_LD : BACKEND_NONE;
-			if (c->port != 2 && currprefs.uvserial_port[c->port][0]) {
-				c->backend = BACKEND_TCP;
-				c->cdfeed = currprefs.uvserial_cd_feed[c->port][0] != 0;
+			if (c->port != 2 && (unit_sock[c->port] || unit_modem[c->port])) {
+				c->backend = unit_modem[c->port] ? BACKEND_MODEM : BACKEND_TCP;
+				c->cdfeed = unit_cdsock[c->port] != NULL;
 			}
 			c->cd = false;
 			c->rxbudget = 0;
@@ -539,21 +570,67 @@ static void uvserial_hard_reset(int hardreset)
 	poll_divider = 0;
 }
 
+static void close_unit(int n)
+{
+	sersock_free(unit_sock[n]);
+	sermodem_free(unit_modem[n]);
+	unit_sock[n] = NULL;
+	unit_modem[n] = NULL;
+	unit_spec[n][0] = 0;
+}
+
+static void close_cdfeed(int n)
+{
+	sersock_free(unit_cdsock[n]);
+	unit_cdsock[n] = NULL;
+	unit_cdspec[n][0] = 0;
+	unit_cdlevel[n] = false;
+}
+
+/* emulator exit or configuration change: unplug everything */
 static void uvserial_free(void)
 {
 	uvserial_active = false;
-	for (int i = 0; i < 8; i++)
-		uvsock_close(i);
+	for (int n = 0; n < UVSER_PORTS; n++) {
+		close_unit(n);
+		close_cdfeed(n);
+	}
 }
 
+/* The card's init runs again after every hard reset; keep what is already
+   plugged in unless its address changed. A failed open is retried next time. */
 static void uvserial_open_sockets(void)
 {
-	for (int n = 0; n < 4; n++) {
-		if (n == 2 || !currprefs.uvserial_port[n][0])
-			continue;
-		uvsock_open(n, currprefs.uvserial_port[n]);
-		if (currprefs.uvserial_cd_feed[n][0])
-			uvsock_open(4 + n, currprefs.uvserial_cd_feed[n]);
+	for (int n = 0; n < UVSER_PORTS; n++) {
+		const TCHAR *spec = n == 2 ? _T("") : currprefs.uvserial_port[n];
+		const TCHAR *cdspec = spec[0] ? currprefs.uvserial_cd_feed[n] : _T("");
+		TCHAR name[64];
+		if (_tcscmp(spec, unit_spec[n]) || (spec[0] && !unit_sock[n] && !unit_modem[n])) {
+			close_unit(n);
+			if (spec[0]) {
+				_stprintf(name, _T("UVSER unit %d"), n);
+				if (!_tcsnicmp(spec, _T("MODEM:"), 6)) {
+					unit_modem[n] = sermodem_open(name, spec);
+				} else {
+					struct sersock_spec sp;
+					if (sersock_parse(spec, &sp))
+						unit_sock[n] = sersock_open(name, &sp);
+				}
+				if (unit_sock[n] || unit_modem[n])
+					_tcscpy(unit_spec[n], spec);
+			}
+		}
+		if (_tcscmp(cdspec, unit_cdspec[n]) || (cdspec[0] && !unit_cdsock[n])) {
+			close_cdfeed(n);
+			if (cdspec[0]) {
+				struct sersock_spec sp;
+				_stprintf(name, _T("UVSER unit %d CD feed"), n);
+				if (sersock_parse(cdspec, &sp))
+					unit_cdsock[n] = sersock_open(name, &sp);
+				if (unit_cdsock[n])
+					_tcscpy(unit_cdspec[n], cdspec);
+			}
+		}
 	}
 }
 
@@ -572,8 +649,8 @@ bool uvserial_init(struct autoconfig_info *aci)
 	if (!aci->doinit)
 		return true;
 
-	uvserial_hard_reset(1);
 	uvserial_open_sockets();
+	uvserial_hard_reset(1);
 	uvserial_active = true;
 
 	/* the LaserDisc player hangs off port 2 of the card, the same place the

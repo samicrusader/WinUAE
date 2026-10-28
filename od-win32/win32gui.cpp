@@ -18574,6 +18574,23 @@ static void ser_tcp_join(HWND hDlg, int addrid, int portid, const TCHAR *defport
 	out[outsize - 1] = 0;
 }
 
+// the /options of a TCP:// address other than /wait (e.g. /connect, /noreconnect), which have
+// no control of their own and must survive a trip through the dialog
+static void ser_tcp_extra(const TCHAR *s, TCHAR *out, int outsize)
+{
+	const TCHAR *p = _tcschr(s, '/');
+	out[0] = 0;
+	if (!_tcsnicmp(s, _T("TCP://"), 6))
+		p = _tcschr(s + 6, '/');
+	while (p && *p) {
+		const TCHAR *next = _tcschr(p + 1, '/');
+		int len = next ? (int)(next - p) : (int)_tcslen(p);
+		if (!(len == 5 && !_tcsnicmp(p, _T("/wait"), 5)) && (int)_tcslen(out) + len < outsize)
+			_tcsncat(out, p, len);
+		p = next;
+	}
+}
+
 static void enable_for_portsdlg (HWND hDlg)
 {
 	int v;
@@ -18928,8 +18945,13 @@ static void values_from_portsdlg (HWND hDlg)
 	if (item != CB_ERR && item > 0) {
 		workprefs.use_serial = 1;
 		if (!_tcsncmp(comports[item - 1]->dev, _T("TCP:"), 4)) {
+			TCHAR extra[200], suffix[256];
+			ser_tcp_extra(!_tcsncmp(workprefs.sername, _T("TCP:"), 4) ? workprefs.sername : _T(""), extra, sizeof extra / sizeof(TCHAR));
+			_stprintf(suffix, _T("%s%s"), ischecked(hDlg, IDC_SER_TCP_WAIT) ? _T("/wait") : _T(""), extra);
 			ser_tcp_join(hDlg, IDC_SER_TCP_ADDR, IDC_SER_TCP_PORT, _T("1234"), _T("TCP://"),
-				ischecked(hDlg, IDC_SER_TCP_WAIT) ? _T("/wait") : _T(""), workprefs.sername, sizeof workprefs.sername / sizeof(TCHAR));
+				suffix, workprefs.sername, sizeof workprefs.sername / sizeof(TCHAR));
+		} else if (!_tcsnicmp(comports[item - 1]->dev, _T("MODEM:"), 6) && !_tcsnicmp(workprefs.sername, _T("MODEM:"), 6)) {
+			// keep the configured modem address and options
 		} else {
 			_tcscpy (workprefs.sername, comports[item - 1]->dev);
 		}
@@ -19072,7 +19094,8 @@ static void values_to_portsdlg (HWND hDlg)
 				result = xSendDlgItemMessage (hDlg, IDC_SERIAL, CB_SETCURSEL, i + 1, 0L);
 				break;
 			} else {
-				if (!_tcscmp (comports[i]->dev, workprefs.sername) || (!_tcsncmp (workprefs.sername, _T("TCP:"), 4) && !_tcsncmp (comports[i]->dev, workprefs.sername, 4))) {
+				if (!_tcscmp (comports[i]->dev, workprefs.sername) || (!_tcsncmp (workprefs.sername, _T("TCP:"), 4) && !_tcsncmp (comports[i]->dev, workprefs.sername, 4)) ||
+					(!_tcsnicmp (workprefs.sername, _T("MODEM:"), 6) && !_tcsnicmp (comports[i]->dev, _T("MODEM:"), 6))) {
 					result = xSendDlgItemMessage (hDlg, IDC_SERIAL, CB_SETCURSEL, i + 1, 0L);
 					break;
 				}

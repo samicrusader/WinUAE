@@ -1223,164 +1223,6 @@ int linefeed_read(int line, uae_u8 *buf, int size)
 	return 0;
 }
 
-/* UV multiserial card sockets (uvserial.cpp): slot 0..3 = unit n data, 4..7 = unit n CD
-   level feed. One listener and one client per slot, non-blocking, like the line feeds. */
-#define UVSOCKS 8
-static SOCKET uvsock_listen[UVSOCKS] = { INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET,
-	INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET };
-static SOCKET uvsock_conn[UVSOCKS] = { INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET,
-	INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET };
-static bool uvsock_wsa[UVSOCKS];
-
-void uvsock_close(int slot)
-{
-	if (slot < 0 || slot >= UVSOCKS)
-		return;
-	if (uvsock_conn[slot] != INVALID_SOCKET) {
-		closesocket(uvsock_conn[slot]);
-		uvsock_conn[slot] = INVALID_SOCKET;
-	}
-	if (uvsock_listen[slot] != INVALID_SOCKET) {
-		closesocket(uvsock_listen[slot]);
-		uvsock_listen[slot] = INVALID_SOCKET;
-	}
-	if (uvsock_wsa[slot]) {
-		WSACleanup();
-		uvsock_wsa[slot] = false;
-	}
-}
-
-// addr: [TCP://]host:port; an empty host means 127.0.0.1
-bool uvsock_open(int slot, const TCHAR *addr)
-{
-	TCHAR host[256], port[32];
-	ADDRINFOW hints = { 0 };
-	PADDRINFOW ai = NULL;
-	u_long nonblock = 1;
-	const int one = 1;
-	TCHAR *p;
-
-	if (slot < 0 || slot >= UVSOCKS)
-		return false;
-	uvsock_close(slot);
-	if (!_tcsnicmp(addr, _T("TCP://"), 6))
-		addr += 6;
-	else if (!_tcsnicmp(addr, _T("TCP:"), 4))
-		addr += 4;
-	_tcsncpy(host, addr, 255);
-	host[255] = 0;
-	p = _tcsrchr(host, ':');
-	if (!p) {
-		write_log(_T("UVSER: slot %d: no port in '%s'\n"), slot, addr);
-		return false;
-	}
-	*p++ = 0;
-	_tcsncpy(port, p, 31);
-	port[31] = 0;
-	if (!host[0])
-		_tcscpy(host, _T("127.0.0.1"));
-
-	if (WSAStartup(MAKEWORD(2, 2), &wsadata)) {
-		write_log(_T("UVSER: WSAStartup() failed: %d\n"), WSAGetLastError());
-		return false;
-	}
-	uvsock_wsa[slot] = true;
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_protocol = IPPROTO_TCP;
-	if (GetAddrInfoW(host, port, &hints, &ai) || !ai) {
-		write_log(_T("UVSER: can't resolve %s:%s: %d\n"), host, port, WSAGetLastError());
-		goto fail;
-	}
-	uvsock_listen[slot] = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-	if (uvsock_listen[slot] == INVALID_SOCKET) {
-		write_log(_T("UVSER: socket() failed: %d\n"), WSAGetLastError());
-		goto fail;
-	}
-	setsockopt(uvsock_listen[slot], SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char*)&one, sizeof one);
-	if (bind(uvsock_listen[slot], ai->ai_addr, (int)ai->ai_addrlen) == SOCKET_ERROR || listen(uvsock_listen[slot], 1) == SOCKET_ERROR) {
-		write_log(_T("UVSER: can't listen on %s:%s: %d\n"), host, port, WSAGetLastError());
-		goto fail;
-	}
-	ioctlsocket(uvsock_listen[slot], FIONBIO, &nonblock);
-	FreeAddrInfoW(ai);
-	write_log(_T("UVSER: unit %d %s listening on %s:%s\n"), slot & 3, slot < 4 ? _T("data") : _T("CD feed"), host, port);
-	return true;
-fail:
-	if (ai)
-		FreeAddrInfoW(ai);
-	uvsock_close(slot);
-	return false;
-}
-
-static bool uvsock_accept(int slot)
-{
-	if (uvsock_listen[slot] == INVALID_SOCKET)
-		return false;
-	if (uvsock_conn[slot] == INVALID_SOCKET) {
-		u_long nonblock = 1;
-		const int one = 1;
-		uvsock_conn[slot] = accept(uvsock_listen[slot], NULL, NULL);
-		if (uvsock_conn[slot] == INVALID_SOCKET)
-			return false;
-		ioctlsocket(uvsock_conn[slot], FIONBIO, &nonblock);
-		setsockopt(uvsock_conn[slot], IPPROTO_TCP, TCP_NODELAY, (char*)&one, sizeof one);
-		write_log(_T("UVSER: unit %d %s client connected\n"), slot & 3, slot < 4 ? _T("data") : _T("CD feed"));
-	}
-	return true;
-}
-
-static void uvsock_drop(int slot)
-{
-	closesocket(uvsock_conn[slot]);
-	uvsock_conn[slot] = INVALID_SOCKET;
-	write_log(_T("UVSER: unit %d %s client disconnected\n"), slot & 3, slot < 4 ? _T("data") : _T("CD feed"));
-}
-
-// is a client connected (accepts a pending one first)
-bool uvsock_connected(int slot)
-{
-	if (slot < 0 || slot >= UVSOCKS)
-		return false;
-	return uvsock_accept(slot) && uvsock_conn[slot] != INVALID_SOCKET;
-}
-
-// up to size bytes from the slot's client; 0 when there is nothing (yet)
-int uvsock_read(int slot, uae_u8 *buf, int size)
-{
-	int n;
-	if (size <= 0 || !uvsock_connected(slot))
-		return 0;
-	n = recv(uvsock_conn[slot], (char*)buf, size, 0);
-	if (n > 0)
-		return n;
-	if (n == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK)
-		return 0;
-	uvsock_drop(slot);
-	return 0;
-}
-
-// send to the slot's client; bytes are dropped (like an unplugged line) when nobody is connected
-void uvsock_write(int slot, const uae_u8 *buf, int size)
-{
-	if (!uvsock_connected(slot))
-		return;
-	while (size > 0) {
-		int n = send(uvsock_conn[slot], (const char*)buf, size, 0);
-		if (n > 0) {
-			buf += n;
-			size -= n;
-			continue;
-		}
-		if (n == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) {
-			Sleep(1);
-			continue;
-		}
-		uvsock_drop(slot);
-		return;
-	}
-}
-
 int openser (const TCHAR *sername)
 {
 	COMMTIMEOUTS CommTimeOuts;
@@ -2128,6 +1970,15 @@ int enumserialports (void)
 		comports[cnt]->dev = my_strdup (_T("TCP://127.0.0.1:1234"));
 		comports[cnt]->cfgname = my_strdup (comports[cnt]->dev);
 		comports[cnt]->name = my_strdup (_T("TCP/IP listener"));
+		cnt++;
+	}
+	if (cnt < MAX_SERPAR_PORTS) {
+		// Hayes modem, calls come in over Telnet (sermodem.cpp); other addresses and
+		// options (/raw, /speed=N) are set in the config file and kept by the GUI
+		comports[cnt] = xcalloc(struct serparportinfo, 1);
+		comports[cnt]->dev = my_strdup (_T("MODEM://127.0.0.1:2323"));
+		comports[cnt]->cfgname = my_strdup (comports[cnt]->dev);
+		comports[cnt]->name = my_strdup (_T("Hayes modem (Telnet listener)"));
 		cnt++;
 	}
 
