@@ -492,6 +492,13 @@ void pioneerld_reset(void)
 
 void pioneerld_activate(void)
 {
+	/* A hard reset (GUI Reset) empties the device lists in virtualdevice_init(),
+	 * so register every time we are called (the card's init calls us again after
+	 * a reset; the add functions ignore duplicates). Registering only once left
+	 * the player without its vsync after a reset: no DM frame hold, no picture
+	 * stops, no reset of the player itself. */
+	device_add_vsync_pre(pioneerld_vsync);
+	device_add_reset(pioneerld_hard_reset);
 	if (ld_registered)
 		return;
 	ld_registered = true;
@@ -499,8 +506,6 @@ void pioneerld_activate(void)
 	ld_spun_up = false;
 	ld_mark_set = false;
 	ld_mode = LD_P_PARK;
-	device_add_vsync_pre(pioneerld_vsync);
-	device_add_reset(pioneerld_hard_reset);
 #ifdef VIDEOGRAB
 	if (isvideograb())
 		pausevideograb(1);
