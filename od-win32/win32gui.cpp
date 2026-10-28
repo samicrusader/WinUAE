@@ -18525,6 +18525,10 @@ static void values_to_portsdlg (HWND hDlg)
 				}
 			}
 		}
+		if (result < 0 && !_tcsnicmp(workprefs.sername, _T("MODEM:"), 6)) {
+			// Hayes modem (MODEM://...): set in the config file, not offered in the list; keep it
+			result = 0;
+		}
 		if(result < 0 && workprefs.sername[0]) {
 			// Warn the user that their COM-port selection is not valid on this machine
 			TCHAR szMessage[MAX_DPATH];

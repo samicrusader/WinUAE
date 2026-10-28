@@ -3306,6 +3306,7 @@
     <ClCompile Include="..\rp.cpp" />
     <ClCompile Include="..\screenshot.cpp" />
     <ClCompile Include="..\serial_win32.cpp" />
+    <ClCompile Include="..\sersock.cpp" />
     <ClCompile Include="..\sounddep\sound.cpp" />
     <ClCompile Include="..\statusline_win32.cpp" />
     <ClCompile Include="..\unicode.cpp" />
@@ -3389,6 +3390,7 @@
     <ClCompile Include="..\..\uaelib.cpp" />
     <ClCompile Include="..\..\uaeresource.cpp" />
     <ClCompile Include="..\..\uaeserial.cpp" />
+    <ClCompile Include="..\..\sermodem.cpp" />
     <ClCompile Include="..\..\zfile.cpp" />
     <ClCompile Include="..\..\zfile_archive.cpp" />
     <ClCompile Include="..\..\jit\compemu.cpp" />
