@@ -90,6 +90,7 @@
 #include "specialmonitors.h"
 #include "gayle.h"
 #include "gdb_server.h"
+#include "sersock.h"
 #ifdef FLOPPYBRIDGE
 #include "floppybridge/floppybridge_abstract.h"
 #include "floppybridge/floppybridge_lib.h"
@@ -11380,6 +11381,8 @@ static void init_expansion_scsi_id(HWND hDlg)
 		ew(hDlg, IDC_SCSIROMID, 0);
 	}
 }
+static void uvserial_ports_dialog(HWND hDlg);
+
 // category (scsiromselectedmask index) whose list shows board i, -1 if none
 static int expansion_category_of(int i)
 {
@@ -11588,6 +11591,7 @@ static void values_to_expansion2dlg_sub(HWND hDlg)
 	ew(hDlg, IDC_SCSIROMSELECTNUM, (er->zorro >= 2 && !er->singleonly) || (deviceflags & EXPANSIONTYPE_CLOCKPORT));
 	hide(hDlg, IDC_SCSIROM24BITDMA, (deviceflags & EXPANSIONTYPE_DMA24) == 0);
 	ew(hDlg, IDC_SCSIROM24BITDMA, (deviceflags & EXPANSIONTYPE_DMA24) != 0);
+	hide(hDlg, IDC_UVSERIAL_PORTS, scsiromselected <= 0 || _tcscmp(er->name, _T("uvserial")));
 }
 
 static void values_from_expansion2dlg(HWND hDlg)
@@ -12060,6 +12064,9 @@ static INT_PTR CALLBACK Expansion2DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LP
 				case IDC_SCSIROMSELECTED:
 				values_from_expansion2dlg(hDlg);
 				values_to_expansion2_expansion_settings(hDlg, 1);
+				break;
+				case IDC_UVSERIAL_PORTS:
+				uvserial_ports_dialog(hDlg);
 				break;
 			}
 			expansion2filebuttons(hDlg, wParam, NULL);
@@ -18574,21 +18581,263 @@ static void ser_tcp_join(HWND hDlg, int addrid, int portid, const TCHAR *defport
 	out[outsize - 1] = 0;
 }
 
-// the /options of a TCP:// address other than /wait (e.g. /connect, /noreconnect), which have
-// no control of their own and must survive a trip through the dialog
-static void ser_tcp_extra(const TCHAR *s, TCHAR *out, int outsize)
+// Network serial backends, shared by the built-in port and the UV card's units (sersock.h has the syntax):
+// TCP://host:port[/wait] listen, TCP://host:port/connect[/noreconnect] connect out,
+// MODEM://[host:port][/raw][/speed=N] Hayes modem with a Telnet (or raw TCP) line
+#define SERNET_LISTEN 0
+#define SERNET_CONNECT 1
+#define SERNET_MODEM 2
+struct sernet_ui
 {
-	const TCHAR *p = _tcschr(s, '/');
-	out[0] = 0;
-	if (!_tcsnicmp(s, _T("TCP://"), 6))
-		p = _tcschr(s + 6, '/');
-	while (p && *p) {
-		const TCHAR *next = _tcschr(p + 1, '/');
-		int len = next ? (int)(next - p) : (int)_tcslen(p);
-		if (!(len == 5 && !_tcsnicmp(p, _T("/wait"), 5)) && (int)_tcslen(out) + len < outsize)
-			_tcsncat(out, p, len);
-		p = next;
+	int mode;
+	TCHAR addr[200], port[32];
+	bool wait, reconnect, raw;
+	int speed;
+};
+
+static bool sernet_is(const TCHAR *s)
+{
+	return !_tcsnicmp(s, _T("TCP:"), 4) || !_tcsnicmp(s, _T("MODEM:"), 6);
+}
+
+static void sernet_split(const TCHAR *s, struct sernet_ui *u, const TCHAR *defport)
+{
+	struct sersock_spec sp;
+	memset(u, 0, sizeof *u);
+	u->reconnect = true;
+	_tcscpy(u->addr, _T("127.0.0.1"));
+	_tcsncpy(u->port, defport, 31);
+	if (!s || !s[0])
+		return;
+	bool modem = !_tcsnicmp(s, _T("MODEM:"), 6);
+	u->mode = modem ? SERNET_MODEM : SERNET_LISTEN;
+	if (!sersock_parse(s, &sp))
+		return;
+	if (!modem && sp.connect)
+		u->mode = SERNET_CONNECT;
+	u->wait = sp.wait;
+	u->reconnect = sp.reconnect;
+	u->raw = sp.raw;
+	u->speed = sp.speed;
+	if (sp.haveaddr) {
+		_tcsncpy(u->addr, sp.host, 199);
+		_tcsncpy(u->port, sp.port, 31);
+	} else if (modem) {
+		// MODEM:// with no address: dial-out only
+		u->addr[0] = 0;
+		u->port[0] = 0;
 	}
+}
+
+static void sernet_build(const struct sernet_ui *u, const TCHAR *defport, TCHAR *out, int outsize)
+{
+	TCHAR addr[200], opts[64];
+	_tcscpy(addr, u->addr);
+	TCHAR *p = _tcspbrk(addr, _T(":/ "));
+	if (p)
+		*p = 0;
+	if (!addr[0])
+		_tcscpy(addr, _T("127.0.0.1"));
+	int n = _tstoi(u->port);
+	opts[0] = 0;
+	if (u->mode == SERNET_MODEM) {
+		if (u->raw)
+			_tcscat(opts, _T("/raw"));
+		if (u->speed > 0)
+			_stprintf(opts + _tcslen(opts), _T("/speed=%d"), u->speed);
+		if (n < 1 || n > 65535)	// no port: dial-out only
+			_sntprintf(out, outsize, _T("MODEM://%s"), opts);
+		else
+			_sntprintf(out, outsize, _T("MODEM://%s:%d%s"), addr, n, opts);
+	} else {
+		if (n < 1 || n > 65535)
+			n = _tstoi(defport);
+		if (u->mode == SERNET_CONNECT)
+			_tcscpy(opts, u->reconnect ? _T("/connect") : _T("/connect/noreconnect"));
+		else if (u->wait)
+			_tcscpy(opts, _T("/wait"));
+		_sntprintf(out, outsize, _T("TCP://%s:%d%s"), addr, n, opts);
+	}
+	out[outsize - 1] = 0;
+}
+
+// same backend, address and the options that matter for its mode? Then the dialog keeps
+// the configured string as written (spelling, aliases, option order)
+static bool sernet_same(const TCHAR *a, const TCHAR *b)
+{
+	struct sersock_spec x, y;
+	if (!_tcscmp(a, b))
+		return true;
+	if (!sernet_is(a) || !sernet_is(b))
+		return false;
+	bool modem = !_tcsnicmp(a, _T("MODEM:"), 6);
+	if (modem != !_tcsnicmp(b, _T("MODEM:"), 6))
+		return false;
+	if (!sersock_parse(a, &x) || !sersock_parse(b, &y))
+		return false;
+	if (x.haveaddr != y.haveaddr)
+		return false;
+	if (x.haveaddr && (_tcsicmp(x.host, y.host) || _tstoi(x.port) != _tstoi(y.port)))
+		return false;
+	if (modem)
+		return x.raw == y.raw && x.speed == y.speed;
+	if (x.connect != y.connect)
+		return false;
+	return x.connect ? x.reconnect == y.reconnect : x.wait == y.wait;
+}
+
+// controls -> sernet_ui; ids of controls a caller doesn't have are 0
+static void sernet_get(HWND hDlg, int mode, int addrid, int portid, int waitid, int reconnid, int rawid, int speedid, struct sernet_ui *u)
+{
+	TCHAR tmp[32];
+	memset(u, 0, sizeof *u);
+	u->mode = mode;
+	GetDlgItemText(hDlg, addrid, u->addr, sizeof u->addr / sizeof(TCHAR));
+	GetDlgItemText(hDlg, portid, u->port, sizeof u->port / sizeof(TCHAR));
+	u->wait = waitid && ischecked(hDlg, waitid);
+	u->reconnect = reconnid && ischecked(hDlg, reconnid);
+	u->raw = rawid && ischecked(hDlg, rawid);
+	tmp[0] = 0;
+	GetDlgItemText(hDlg, speedid, tmp, sizeof tmp / sizeof(TCHAR));
+	u->speed = _tstoi(tmp);
+}
+
+static void sernet_set(HWND hDlg, const struct sernet_ui *u, int addrid, int portid, int waitid, int reconnid, int rawid, int speedid)
+{
+	SetDlgItemText(hDlg, addrid, u->addr);
+	SetDlgItemText(hDlg, portid, u->port);
+	if (waitid)
+		CheckDlgButton(hDlg, waitid, u->wait);
+	CheckDlgButton(hDlg, reconnid, u->reconnect);
+	CheckDlgButton(hDlg, rawid, u->raw);
+	if (u->speed > 0)
+		SetDlgItemInt(hDlg, speedid, u->speed, FALSE);
+	else
+		SetDlgItemText(hDlg, speedid, _T(""));
+	xSendDlgItemMessage(hDlg, addrid, EM_LIMITTEXT, 199, 0);
+	xSendDlgItemMessage(hDlg, portid, EM_LIMITTEXT, 5, 0);
+	xSendDlgItemMessage(hDlg, speedid, EM_LIMITTEXT, 7, 0);
+}
+
+// United Video multiserial card: one row per unit (unit 2 is the LaserDisc player, not configurable)
+#define UVSER_GUI_UNITS 4
+static const int uvser_ids[UVSER_GUI_UNITS][7] = {
+	{ IDC_UVSER0_MODE, IDC_UVSER0_ADDR, IDC_UVSER0_PORT, IDC_UVSER0_RECONNECT, IDC_UVSER0_RAW, IDC_UVSER0_SPEED, IDC_UVSER0_CDFEED },
+	{ IDC_UVSER1_MODE, IDC_UVSER1_ADDR, IDC_UVSER1_PORT, IDC_UVSER1_RECONNECT, IDC_UVSER1_RAW, IDC_UVSER1_SPEED, IDC_UVSER1_CDFEED },
+	{ 0 },
+	{ IDC_UVSER3_MODE, IDC_UVSER3_ADDR, IDC_UVSER3_PORT, IDC_UVSER3_RECONNECT, IDC_UVSER3_RAW, IDC_UVSER3_SPEED, IDC_UVSER3_CDFEED },
+};
+
+// row mode combo: 0 none, 1 + SERNET_*
+static void uvserial_enable_row(HWND hDlg, int unit)
+{
+	const int *id = uvser_ids[unit];
+	int sel = (int)xSendDlgItemMessage(hDlg, id[0], CB_GETCURSEL, 0, 0);
+	int mode = sel - 1;
+	ew(hDlg, id[1], mode >= 0);
+	ew(hDlg, id[2], mode >= 0);
+	ew(hDlg, id[3], mode == SERNET_CONNECT);
+	ew(hDlg, id[4], mode == SERNET_MODEM);
+	ew(hDlg, id[5], mode == SERNET_MODEM);
+	ew(hDlg, id[6], mode >= 0);
+}
+
+static INT_PTR CALLBACK UVSerialDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	bool handled;
+	INT_PTR v = commonproc(hDlg, msg, wParam, lParam, &handled);
+	if (handled) {
+		return v;
+	}
+	switch (msg)
+	{
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		return TRUE;
+	case WM_CLOSE:
+		CustomDialogClose(hDlg, 0);
+		DestroyWindow(hDlg);
+		return TRUE;
+	case WM_INITDIALOG:
+		for (int n = 0; n < UVSER_GUI_UNITS; n++) {
+			const int *id = uvser_ids[n];
+			struct sernet_ui u;
+			TCHAR defport[16];
+			if (!id[0])
+				continue;
+			xSendDlgItemMessage(hDlg, id[0], CB_RESETCONTENT, 0, 0);
+			xSendDlgItemMessage(hDlg, id[0], CB_ADDSTRING, 0, (LPARAM)szNone.c_str());
+			xSendDlgItemMessage(hDlg, id[0], CB_ADDSTRING, 0, (LPARAM)_T("TCP listen"));
+			xSendDlgItemMessage(hDlg, id[0], CB_ADDSTRING, 0, (LPARAM)_T("TCP connect"));
+			xSendDlgItemMessage(hDlg, id[0], CB_ADDSTRING, 0, (LPARAM)_T("Modem (Telnet)"));
+			_stprintf(defport, _T("%d"), 1240 + n);
+			sernet_split(workprefs.uvserial_port[n], &u, defport);
+			xSendDlgItemMessage(hDlg, id[0], CB_SETCURSEL, workprefs.uvserial_port[n][0] ? u.mode + 1 : 0, 0);
+			sernet_set(hDlg, &u, id[1], id[2], 0, id[3], id[4], id[5]);
+			xSendDlgItemMessage(hDlg, id[6], EM_LIMITTEXT, sizeof workprefs.uvserial_cd_feed[n] / sizeof(TCHAR) - 1, 0);
+			SetDlgItemText(hDlg, id[6], workprefs.uvserial_cd_feed[n]);
+			uvserial_enable_row(hDlg, n);
+		}
+		return TRUE;
+	case WM_COMMAND:
+		if (HIWORD(wParam) == CBN_SELCHANGE) {
+			for (int n = 0; n < UVSER_GUI_UNITS; n++) {
+				if (uvser_ids[n][0] && LOWORD(wParam) == uvser_ids[n][0])
+					uvserial_enable_row(hDlg, n);
+			}
+		}
+		switch (LOWORD(wParam))
+		{
+		case IDOK:
+			for (int n = 0; n < UVSER_GUI_UNITS; n++) {
+				const int *id = uvser_ids[n];
+				TCHAR tmp[256], defport[16];
+				if (!id[0])
+					continue;	// unit 2: whatever the config says is kept (uvserial.cpp ignores it)
+				int sel = (int)xSendDlgItemMessage(hDlg, id[0], CB_GETCURSEL, 0, 0);
+				if (sel <= 0) {
+					tmp[0] = 0;
+				} else {
+					struct sernet_ui u;
+					sernet_get(hDlg, sel - 1, id[1], id[2], 0, id[3], id[4], id[5], &u);
+					_stprintf(defport, _T("%d"), 1240 + n);
+					sernet_build(&u, defport, tmp, sizeof tmp / sizeof(TCHAR));
+				}
+				if (!sernet_same(tmp, workprefs.uvserial_port[n]))
+					_tcscpy(workprefs.uvserial_port[n], tmp);
+				GetDlgItemText(hDlg, id[6], workprefs.uvserial_cd_feed[n], sizeof workprefs.uvserial_cd_feed[n] / sizeof(TCHAR));
+			}
+			CustomDialogClose(hDlg, 1);
+			return TRUE;
+		case IDCANCEL:
+			CustomDialogClose(hDlg, 0);
+			return TRUE;
+		}
+		break;
+	}
+	return FALSE;
+}
+
+static void uvserial_ports_dialog(HWND hDlg)
+{
+	SAVECDS;
+	HWND hwnd = CustomCreateDialog(IDD_UVSERIAL, hDlg, UVSerialDialogProc, &cdstate);
+	if (hwnd != NULL) {
+		while (cdstate.active) {
+			MSG msg;
+			int ret;
+			WaitMessage();
+			while ((ret = GetMessage(&msg, NULL, 0, 0))) {
+				if (ret == -1)
+					break;
+				if (!IsWindow(hwnd) || !IsDialogMessage(hwnd, &msg)) {
+					TranslateMessage(&msg);
+					DispatchMessage(&msg);
+				}
+			}
+		}
+	}
+	RESTORECDS;
 }
 
 static void enable_for_portsdlg (HWND hDlg)
@@ -18608,9 +18857,13 @@ static void enable_for_portsdlg (HWND hDlg)
 	ew(hDlg, IDC_SERIAL_DIRECT, FALSE);
 	ew(hDlg, IDC_SERIAL, FALSE);
 	ew(hDlg, IDC_UAESERIAL, FALSE);
+	ew(hDlg, IDC_SER_TCP_MODE, FALSE);
 	ew(hDlg, IDC_SER_TCP_ADDR, FALSE);
 	ew(hDlg, IDC_SER_TCP_PORT, FALSE);
 	ew(hDlg, IDC_SER_TCP_WAIT, FALSE);
+	ew(hDlg, IDC_SER_TCP_RECONNECT, FALSE);
+	ew(hDlg, IDC_SER_TCP_RAW, FALSE);
+	ew(hDlg, IDC_SER_TCP_SPEED, FALSE);
 	for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
 		for (int j = 0; j < 4; j++)
 			ew(hDlg, linefeed_ids[i][j], FALSE);
@@ -18618,10 +18871,22 @@ static void enable_for_portsdlg (HWND hDlg)
 #else
 	v = workprefs.use_serial ? TRUE : FALSE;
 	{
-		bool tcp = workprefs.use_serial && !_tcsncmp(workprefs.sername, _T("TCP:"), 4);
+		bool tcp = workprefs.use_serial && sernet_is(workprefs.sername);
+		int mode = (int)xSendDlgItemMessage(hDlg, IDC_SER_TCP_MODE, CB_GETCURSEL, 0, 0);
+		if (mode < 0)
+			mode = SERNET_LISTEN;
+		hide(hDlg, IDC_SER_TCP_WAIT, mode != SERNET_LISTEN);
+		hide(hDlg, IDC_SER_TCP_RECONNECT, mode != SERNET_CONNECT);
+		hide(hDlg, IDC_SER_TCP_RAW, mode != SERNET_MODEM);
+		hide(hDlg, IDC_SER_TCP_SPEEDTXT, mode != SERNET_MODEM);
+		hide(hDlg, IDC_SER_TCP_SPEED, mode != SERNET_MODEM);
+		ew(hDlg, IDC_SER_TCP_MODE, tcp);
 		ew(hDlg, IDC_SER_TCP_ADDR, tcp);
 		ew(hDlg, IDC_SER_TCP_PORT, tcp);
 		ew(hDlg, IDC_SER_TCP_WAIT, tcp);
+		ew(hDlg, IDC_SER_TCP_RECONNECT, tcp);
+		ew(hDlg, IDC_SER_TCP_RAW, tcp);
+		ew(hDlg, IDC_SER_TCP_SPEED, tcp);
 		for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
 			for (int j = 1; j < 4; j++)
 				ew(hDlg, linefeed_ids[i][j], workprefs.serial_linefeed[i].enabled);
@@ -18945,13 +19210,15 @@ static void values_from_portsdlg (HWND hDlg)
 	if (item != CB_ERR && item > 0) {
 		workprefs.use_serial = 1;
 		if (!_tcsncmp(comports[item - 1]->dev, _T("TCP:"), 4)) {
-			TCHAR extra[200], suffix[256];
-			ser_tcp_extra(!_tcsncmp(workprefs.sername, _T("TCP:"), 4) ? workprefs.sername : _T(""), extra, sizeof extra / sizeof(TCHAR));
-			_stprintf(suffix, _T("%s%s"), ischecked(hDlg, IDC_SER_TCP_WAIT) ? _T("/wait") : _T(""), extra);
-			ser_tcp_join(hDlg, IDC_SER_TCP_ADDR, IDC_SER_TCP_PORT, _T("1234"), _T("TCP://"),
-				suffix, workprefs.sername, sizeof workprefs.sername / sizeof(TCHAR));
-		} else if (!_tcsnicmp(comports[item - 1]->dev, _T("MODEM:"), 6) && !_tcsnicmp(workprefs.sername, _T("MODEM:"), 6)) {
-			// keep the configured modem address and options
+			// TCP/IP entry: listen, connect or modem, from the fields below the list
+			struct sernet_ui u;
+			TCHAR tmp[MAX_DPATH];
+			int mode = (int)xSendDlgItemMessage(hDlg, IDC_SER_TCP_MODE, CB_GETCURSEL, 0, 0);
+			sernet_get(hDlg, mode < 0 ? SERNET_LISTEN : mode, IDC_SER_TCP_ADDR, IDC_SER_TCP_PORT, IDC_SER_TCP_WAIT,
+				IDC_SER_TCP_RECONNECT, IDC_SER_TCP_RAW, IDC_SER_TCP_SPEED, &u);
+			sernet_build(&u, _T("1234"), tmp, sizeof tmp / sizeof(TCHAR));
+			if (!sernet_same(tmp, workprefs.sername))
+				_tcscpy(workprefs.sername, tmp);
 		} else {
 			_tcscpy (workprefs.sername, comports[item - 1]->dev);
 		}
@@ -19056,14 +19323,10 @@ static void values_to_portsdlg (HWND hDlg)
 	CheckDlgButton(hDlg, IDC_SER_DIRECT, workprefs.serial_direct);
 	{
 		TCHAR addr[200], port[32];
-		bool wait;
-		ser_tcp_split(!_tcsncmp(workprefs.sername, _T("TCP:"), 4) ? workprefs.sername : _T(""),
-			addr, sizeof addr / sizeof(TCHAR), port, sizeof port / sizeof(TCHAR), &wait, _T("1234"));
-		SetDlgItemText(hDlg, IDC_SER_TCP_ADDR, addr);
-		SetDlgItemText(hDlg, IDC_SER_TCP_PORT, port);
-		CheckDlgButton(hDlg, IDC_SER_TCP_WAIT, wait);
-		SendDlgItemMessage(hDlg, IDC_SER_TCP_ADDR, EM_LIMITTEXT, 199, 0);
-		SendDlgItemMessage(hDlg, IDC_SER_TCP_PORT, EM_LIMITTEXT, 5, 0);
+		struct sernet_ui u;
+		sernet_split(sernet_is(workprefs.sername) ? workprefs.sername : _T(""), &u, _T("1234"));
+		xSendDlgItemMessage(hDlg, IDC_SER_TCP_MODE, CB_SETCURSEL, u.mode, 0);
+		sernet_set(hDlg, &u, IDC_SER_TCP_ADDR, IDC_SER_TCP_PORT, IDC_SER_TCP_WAIT, IDC_SER_TCP_RECONNECT, IDC_SER_TCP_RAW, IDC_SER_TCP_SPEED);
 		for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
 			const struct serial_linefeed *lf = &workprefs.serial_linefeed[i];
 			TCHAR defport[16], tmp[64];
@@ -19089,13 +19352,12 @@ static void values_to_portsdlg (HWND hDlg)
 		int i;
 		LRESULT result = -1;
 		for (i = 0; i < MAX_SERPAR_PORTS && comports[i]; i++) {
-			if (!_tcsncmp (workprefs.sername, _T("TCP:"), 4) && !_tcsncmp (comports[i]->dev, workprefs.sername, 4)) {
-				// address, port and /wait live in their own fields
+			if (sernet_is (workprefs.sername) && !_tcsncmp (comports[i]->dev, _T("TCP:"), 4)) {
+				// TCP and MODEM addresses: mode, address, port and options live in their own fields
 				result = xSendDlgItemMessage (hDlg, IDC_SERIAL, CB_SETCURSEL, i + 1, 0L);
 				break;
 			} else {
-				if (!_tcscmp (comports[i]->dev, workprefs.sername) || (!_tcsncmp (workprefs.sername, _T("TCP:"), 4) && !_tcsncmp (comports[i]->dev, workprefs.sername, 4)) ||
-					(!_tcsnicmp (workprefs.sername, _T("MODEM:"), 6) && !_tcsnicmp (comports[i]->dev, _T("MODEM:"), 6))) {
+				if (!_tcscmp (comports[i]->dev, workprefs.sername)) {
 					result = xSendDlgItemMessage (hDlg, IDC_SERIAL, CB_SETCURSEL, i + 1, 0L);
 					break;
 				}
@@ -19157,6 +19419,11 @@ static void init_portsdlg(HWND hDlg)
 	xSendDlgItemMessage(hDlg, IDC_DONGLELIST, CB_ADDSTRING, 0, (LPARAM)_T("Striker Manager"));
 	xSendDlgItemMessage(hDlg, IDC_DONGLELIST, CB_ADDSTRING, 0, (LPARAM)_T("Multi-Player Soccer Manager"));
 	xSendDlgItemMessage(hDlg, IDC_DONGLELIST, CB_ADDSTRING, 0, (LPARAM)_T("Football Director 2"));
+
+	xSendDlgItemMessage(hDlg, IDC_SER_TCP_MODE, CB_RESETCONTENT, 0, 0L);
+	xSendDlgItemMessage(hDlg, IDC_SER_TCP_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Listen"));
+	xSendDlgItemMessage(hDlg, IDC_SER_TCP_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Connect"));
+	xSendDlgItemMessage(hDlg, IDC_SER_TCP_MODE, CB_ADDSTRING, 0, (LPARAM)_T("Modem (Telnet)"));
 
 	xSendDlgItemMessage(hDlg, IDC_SERIAL, CB_RESETCONTENT, 0, 0L);
 	xSendDlgItemMessage(hDlg, IDC_SERIAL, CB_ADDSTRING, 0, (LPARAM)szNone.c_str());
@@ -19526,6 +19793,7 @@ static INT_PTR CALLBACK IOPortsDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPAR
 		init_portsdlg (hDlg);
 		enable_for_portsdlg (hDlg);
 		values_to_portsdlg (hDlg);
+		enable_for_portsdlg (hDlg);	// the TCP/IP options shown depend on the mode just loaded
 		recursive--;
 		break;
 	case WM_USER:
@@ -19544,10 +19812,13 @@ static INT_PTR CALLBACK IOPortsDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPAR
 			}
 		} else if (wParam == IDC_UAESERIAL || wParam == IDC_SER_SHARED || wParam == IDC_SER_DIRECT || wParam == IDC_SER_CTSRTS || wParam == IDC_SER_RTSCTSDTRDTECD || wParam == IDC_SER_RI ||
 			wParam == IDC_SER_CRLF || wParam == IDC_PRINTERAUTOFLUSH || wParam == IDC_SAMPLER_STEREO || wParam == IDC_MIDIROUTER ||
-			wParam == IDC_SER_TCP_WAIT || linefeed_is_ctl((int)wParam, 0)) {
+			wParam == IDC_SER_TCP_WAIT || wParam == IDC_SER_TCP_RECONNECT || wParam == IDC_SER_TCP_RAW || linefeed_is_ctl((int)wParam, 0)) {
 			values_from_portsdlg (hDlg);
 			enable_for_portsdlg (hDlg);
-		} else if (HIWORD(wParam) == EN_CHANGE && (LOWORD(wParam) == IDC_SER_TCP_ADDR || LOWORD(wParam) == IDC_SER_TCP_PORT ||
+		} else if (HIWORD(wParam) == CBN_SELCHANGE && LOWORD(wParam) == IDC_SER_TCP_MODE) {
+			values_from_portsdlg (hDlg);
+			enable_for_portsdlg (hDlg);
+		} else if (HIWORD(wParam) == EN_CHANGE && (LOWORD(wParam) == IDC_SER_TCP_ADDR || LOWORD(wParam) == IDC_SER_TCP_PORT || LOWORD(wParam) == IDC_SER_TCP_SPEED ||
 			linefeed_is_ctl(LOWORD(wParam), 1) || linefeed_is_ctl(LOWORD(wParam), 2))) {
 			values_from_portsdlg (hDlg);
 		} else if (HIWORD(wParam) == CBN_SELCHANGE && linefeed_is_ctl(LOWORD(wParam), 3)) {

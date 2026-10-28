@@ -432,6 +432,34 @@
 #define IDC_GENLOCK_OFFSET_X            1898
 #define IDC_GENLOCK_OFFSET_Y            1899
 #define IDC_GENLOCK_SCALE               1902
+#define IDD_UVSERIAL                    410
+#define IDC_SER_TCP_MODE                1903
+#define IDC_SER_TCP_RECONNECT           1904
+#define IDC_SER_TCP_RAW                 1905
+#define IDC_SER_TCP_SPEED               1906
+#define IDC_SER_TCP_SPEEDTXT            1907
+#define IDC_UVSERIAL_PORTS              1908
+#define IDC_UVSER0_MODE                 1910
+#define IDC_UVSER0_ADDR                 1911
+#define IDC_UVSER0_PORT                 1912
+#define IDC_UVSER0_RECONNECT            1913
+#define IDC_UVSER0_RAW                  1914
+#define IDC_UVSER0_SPEED                1915
+#define IDC_UVSER0_CDFEED               1916
+#define IDC_UVSER1_MODE                 1920
+#define IDC_UVSER1_ADDR                 1921
+#define IDC_UVSER1_PORT                 1922
+#define IDC_UVSER1_RECONNECT            1923
+#define IDC_UVSER1_RAW                  1924
+#define IDC_UVSER1_SPEED                1925
+#define IDC_UVSER1_CDFEED               1926
+#define IDC_UVSER3_MODE                 1940
+#define IDC_UVSER3_ADDR                 1941
+#define IDC_UVSER3_PORT                 1942
+#define IDC_UVSER3_RECONNECT            1943
+#define IDC_UVSER3_RAW                  1944
+#define IDC_UVSER3_SPEED                1945
+#define IDC_UVSER3_CDFEED               1946
 #define IDS_READONLYCONFIRMATION        421
 #define IDS_SCREEN_NATIVELACE           422
 #define IDS_PORT_AUTOFIRE_TOGGLENOAF    423
@@ -1472,9 +1500,9 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
 #define _APS_3D_CONTROLS                     1
-#define _APS_NEXT_RESOURCE_VALUE        410
+#define _APS_NEXT_RESOURCE_VALUE        411
 #define _APS_NEXT_COMMAND_VALUE         40054
-#define _APS_NEXT_CONTROL_VALUE         1903
+#define _APS_NEXT_CONTROL_VALUE         1947
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

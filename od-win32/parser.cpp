@@ -1965,20 +1965,12 @@ int enumserialports (void)
 	}
 
 	if (cnt < MAX_SERPAR_PORTS) {
-		// one entry: the address, port and wait flag are set separately in the GUI
+		// one entry for TCP://... and MODEM://...: the GUI sets the mode (listen, connect,
+		// Hayes modem), address, port and options in their own fields
 		comports[cnt] = xcalloc(struct serparportinfo, 1);
 		comports[cnt]->dev = my_strdup (_T("TCP://127.0.0.1:1234"));
 		comports[cnt]->cfgname = my_strdup (comports[cnt]->dev);
-		comports[cnt]->name = my_strdup (_T("TCP/IP listener"));
-		cnt++;
-	}
-	if (cnt < MAX_SERPAR_PORTS) {
-		// Hayes modem, calls come in over Telnet (sermodem.cpp); other addresses and
-		// options (/raw, /speed=N) are set in the config file and kept by the GUI
-		comports[cnt] = xcalloc(struct serparportinfo, 1);
-		comports[cnt]->dev = my_strdup (_T("MODEM://127.0.0.1:2323"));
-		comports[cnt]->cfgname = my_strdup (comports[cnt]->dev);
-		comports[cnt]->name = my_strdup (_T("Hayes modem (Telnet listener)"));
+		comports[cnt]->name = my_strdup (_T("TCP/IP (listen, connect or Hayes modem)"));
 		cnt++;
 	}
 
