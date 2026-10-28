@@ -58,6 +58,7 @@ int log_uvserial = 1;
 /* what a port is wired to */
 #define BACKEND_NONE	0
 #define BACKEND_LD		1
+#define BACKEND_TCP		2		/* uvserial_port<n>=TCP://host:port, e.g. a modem for sts on unit 3 */
 
 struct uvchannel
 {
@@ -70,6 +71,9 @@ struct uvchannel
 	uae_u8 sr;
 	uae_u8 rxfifo[RXFIFO_SIZE];
 	int rxhead, rxtail;
+	bool cdfeed;			/* CD comes from a level feed listener */
+	bool cd;				/* carrier detect asserted (TCP backend only) */
+	double rxbudget;		/* bytes the line could have delivered since the last poll */
 };
 
 struct uvduart
@@ -169,12 +173,49 @@ static void uvserial_rethink(void)
 	}
 }
 
+/* 68681 input port as UVSerial.device reads it (CODE:$13AC): DUART n, channel A
+   (even unit) CTS = IP0, DSR = IP3, CD = IP4; channel B (odd unit) CTS = IP1,
+   DSR = IP2, CD = IP5. A set bit is a released line. Only CD is ever released,
+   and only on a TCP port with no carrier; everything else reads asserted as before. */
+static uae_u8 input_port(struct uvduart *d)
+{
+	uae_u8 ip = 0;
+	if (d->ch[0].backend == BACKEND_TCP && !d->ch[0].cd)
+		ip |= 0x10;
+	if (d->ch[1].backend == BACKEND_TCP && !d->ch[1].cd)
+		ip |= 0x20;
+	return ip;
+}
+
+static void set_cd(struct uvchannel *c, bool on)
+{
+	if (c->cd == on)
+		return;
+	c->cd = on;
+	if (log_uvserial)
+		write_log(_T("UVSER: port %d carrier %s\n"), c->port, on ? _T("on") : _T("off"));
+}
+
+/* receive pacing: the 68681 delivers a byte per character time at the programmed rate */
+static double rx_bytes_per_poll(struct uvchannel *c, struct uvduart *d)
+{
+	const int *tbl = (d->acr & 0x80) ? baudtable_set2 : baudtable_set1;
+	int baud = tbl[(c->csr >> 4) & 15];
+	if (baud <= 0)
+		baud = 19200;
+	/* polled every 64 lines, ~15700 lines per second */
+	return baud / 10.0 * 64.0 / 15700.0;
+}
+
 static void backend_write(struct uvchannel *c, uae_u8 v)
 {
 	switch (c->backend)
 	{
 	case BACKEND_LD:
 		pioneerld_put(v);
+		break;
+	case BACKEND_TCP:
+		uvsock_write(c->port, &v, 1);
 		break;
 	default:
 		if (log_uvserial > 1)
@@ -183,10 +224,45 @@ static void backend_write(struct uvchannel *c, uae_u8 v)
 	}
 }
 
-static void backend_poll(struct uvchannel *c)
+static void backend_poll(struct uvchannel *c, struct uvduart *d)
 {
 	switch (c->backend)
 	{
+	case BACKEND_TCP:
+	{
+		uae_u8 buf[64];
+		int n;
+		if (c->cdfeed) {
+			while ((n = uvsock_read(4 + c->port, buf, sizeof buf)) > 0) {
+				for (int i = 0; i < n; i++) {		/* the last level byte wins */
+					if (buf[i] == '1' || buf[i] == 0x01)
+						set_cd(c, true);
+					else if (buf[i] == '0' || buf[i] == 0x00)
+						set_cd(c, false);
+				}
+			}
+		} else {
+			set_cd(c, uvsock_connected(c->port));
+		}
+		if (!c->rxen) {
+			c->rxbudget = 0;		/* receiver off: leave the bytes in the socket */
+			break;
+		}
+		c->rxbudget += rx_bytes_per_poll(c, d);
+		if (c->rxbudget > sizeof buf)
+			c->rxbudget = sizeof buf;
+		int want = (int)c->rxbudget;
+		int room = RXFIFO_SIZE - 1 - rxfifo_count(c);
+		if (want > room)
+			want = room;
+		if (want <= 0)
+			break;
+		n = uvsock_read(c->port, buf, want);
+		c->rxbudget -= n;
+		for (int i = 0; i < n; i++)
+			rxfifo_put(c, buf[i]);
+		break;
+	}
 	case BACKEND_LD:
 		for (;;) {
 			int v = pioneerld_get();
@@ -209,8 +285,8 @@ static void uvserial_hsync(void)
 		return;
 	poll_divider = 0;
 	for (int i = 0; i < 2; i++) {
-		backend_poll(&duart[i].ch[0]);
-		backend_poll(&duart[i].ch[1]);
+		backend_poll(&duart[i].ch[0], &duart[i]);
+		backend_poll(&duart[i].ch[1], &duart[i]);
 	}
 	devices_rethink_all(uvserial_rethink);
 }
@@ -267,8 +343,8 @@ static uae_u8 uvserial_reg_get(int duartnum, int reg)
 		return d->isr;
 	}
 	if (reg == 13) {
-		/* input port. keep CTS/DSR asserted for both channels */
-		return 0x00;
+		/* input port: CTS/DSR asserted for both channels, CD per backend */
+		return input_port(d);
 	}
 	if (reg == 14 || reg == 15) {
 		/* start / stop counter */
@@ -447,6 +523,12 @@ static void uvserial_hard_reset(int hardreset)
 			struct uvchannel *c = &d->ch[j];
 			c->port = i * 2 + j;
 			c->backend = (c->port == 2) ? BACKEND_LD : BACKEND_NONE;
+			if (c->port != 2 && currprefs.uvserial_port[c->port][0]) {
+				c->backend = BACKEND_TCP;
+				c->cdfeed = currprefs.uvserial_cd_feed[c->port][0] != 0;
+			}
+			c->cd = false;
+			c->rxbudget = 0;
 			c->mrptr = 0;
 			c->rxhead = c->rxtail = 0;
 			c->rxen = false;
@@ -460,6 +542,19 @@ static void uvserial_hard_reset(int hardreset)
 static void uvserial_free(void)
 {
 	uvserial_active = false;
+	for (int i = 0; i < 8; i++)
+		uvsock_close(i);
+}
+
+static void uvserial_open_sockets(void)
+{
+	for (int n = 0; n < 4; n++) {
+		if (n == 2 || !currprefs.uvserial_port[n][0])
+			continue;
+		uvsock_open(n, currprefs.uvserial_port[n]);
+		if (currprefs.uvserial_cd_feed[n][0])
+			uvsock_open(4 + n, currprefs.uvserial_cd_feed[n]);
+	}
 }
 
 bool uvserial_init(struct autoconfig_info *aci)
@@ -478,6 +573,7 @@ bool uvserial_init(struct autoconfig_info *aci)
 		return true;
 
 	uvserial_hard_reset(1);
+	uvserial_open_sockets();
 	uvserial_active = true;
 
 	/* the LaserDisc player hangs off port 2 of the card, the same place the

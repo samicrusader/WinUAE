@@ -2655,6 +2655,13 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 	cfgfile_dwrite_str(f, _T("genlock_video"), p->genlock_video_file);
 	cfgfile_dwrite(f, _T("genlock_ld_offset"), _T("%d"), p->genlock_ld_offset);
 	cfgfile_dwrite_str(f, _T("genlock_ld_discid"), p->genlock_ld_discid);
+	for (int i = 0; i < 4; i++) {
+		TCHAR name[64];
+		_stprintf(name, _T("uvserial_port%d"), i);
+		cfgfile_dwrite_str(f, name, p->uvserial_port[i]);
+		_stprintf(name, _T("uvserial_cd_feed%d"), i);
+		cfgfile_dwrite_str(f, name, p->uvserial_cd_feed[i]);
+	}
 	cfgfile_dwrite_str(f, _T("genlock_ld_stops"), p->genlock_ld_stops);
 	cfgfile_dwrite_str(f, _T("genlock_font"), p->genlock_font);
 	cfgfile_dwrite_str(f, _T("genlock_stream"), p->genlock_stream);
@@ -5980,6 +5987,20 @@ static void addbcromtypenet(struct uae_prefs *p, int romtype, const TCHAR *netna
 }
 
 // serial_<cts|dsr|cd>_feed[_listen|_mode|_baud]
+static int cfgfile_parse_uvserial(struct uae_prefs *p, const TCHAR *option, const TCHAR *value)
+{
+	for (int i = 0; i < 4; i++) {
+		TCHAR name[64];
+		_stprintf(name, _T("uvserial_port%d"), i);
+		if (cfgfile_string(option, value, name, p->uvserial_port[i], sizeof p->uvserial_port[i] / sizeof(TCHAR)))
+			return 1;
+		_stprintf(name, _T("uvserial_cd_feed%d"), i);
+		if (cfgfile_string(option, value, name, p->uvserial_cd_feed[i], sizeof p->uvserial_cd_feed[i] / sizeof(TCHAR)))
+			return 1;
+	}
+	return 0;
+}
+
 static int cfgfile_parse_linefeed(struct uae_prefs *p, const TCHAR *option, const TCHAR *value)
 {
 	for (int i = 0; i < SERIAL_LINEFEEDS; i++) {
@@ -6161,6 +6182,7 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_yesno(option, value, _T("serial_hardware_ctsrts"), &p->serial_hwctsrts)
 		|| cfgfile_yesno(option, value, _T("serial_status"), &p->serial_rtsctsdtrdtecd)
 		|| cfgfile_parse_linefeed(p, option, value)
+		|| cfgfile_parse_uvserial(p, option, value)
 		|| cfgfile_yesno(option, value, _T("serial_ri"), &p->serial_ri)
 		|| cfgfile_yesno(option, value, _T("serial_direct"), &p->serial_direct)
 		|| cfgfile_yesno(option, value, _T("fpu_strict"), &p->fpu_strict)
@@ -8683,6 +8705,10 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 		lf->mode = i == SERIAL_LINEFEED_CD ? SERIAL_LINEFEED_MODE_LEVEL : SERIAL_LINEFEED_MODE_SERIAL;
 		lf->baud = 110;
 		_stprintf(lf->listen, _T("127.0.0.1:%d"), 1235 + i);
+	}
+	for (int i = 0; i < 4; i++) {
+		p->uvserial_port[i][0] = 0;
+		p->uvserial_cd_feed[i][0] = 0;
 	}
 	p->parallel_demand = 0;
 	p->parallel_matrix_emulation = 0;
