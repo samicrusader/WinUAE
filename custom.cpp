@@ -52,6 +52,7 @@
 #include "rommgr.h"
 #ifdef WITH_SPECIALMONITORS
 #include "specialmonitors.h"
+#include "pioneerld.h"
 #endif
 #ifdef RETROPLATFORM
 #include "rp.h"
@@ -7164,6 +7165,8 @@ static uae_u32 REGPARAM2 mousehack_helper_old(struct TrapContext *ctx)
 int custom_init(void)
 {
 	genlock_cold_boot_done = false;
+	// the LaserDisc player powers up with the rest of the unit, and only then
+	pioneerld_power_on();
 
 #ifdef AUTOCONFIG
 	if (uae_boot_rom_type) {

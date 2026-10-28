@@ -654,7 +654,9 @@ bool uvserial_init(struct autoconfig_info *aci)
 	uvserial_active = true;
 
 	/* the LaserDisc player hangs off port 2 of the card, the same place the
-	 * real Sneak Prevue control unit wires its round DIN connector */
+	 * real Sneak Prevue control unit wires its round DIN connector. It is a
+	 * box of its own: an Amiga reset does not reset it. */
+	pioneerld_amiga_reset();
 	pioneerld_activate();
 
 	device_add_hsync(uvserial_hsync);

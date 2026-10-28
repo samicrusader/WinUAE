@@ -4385,7 +4385,12 @@ void specialmonitor_free(void)
 void specialmonitor_reset(void)
 {
 #ifdef VIDEOGRAB
-	close_genlock_video();
+	// A LaserDisc player (pioneer_ld) is a separate box: an Amiga reset does
+	// not stop its disc, so its video stays open, where it was, across resets.
+	// The source changing reopens it (specialmonitor_update_genlock) and the
+	// emulator closing ends it (specialmonitor_free).
+	if (!(genlock_video && currprefs.genlock_image >= 8))
+		close_genlock_video();
 	genlock_error = false;
 #endif
 	if (!currprefs.monitoremu)

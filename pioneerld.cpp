@@ -75,6 +75,9 @@ int log_pioneerld = 1;
 #define LD_UC_KEY_PREFIX "DD"
 
 static bool ld_registered;
+/* set by custom_init() (emulator start, config load): the next activation powers the player on */
+static bool ld_power_pending = true;
+static bool ld_resync_pending;	/* an Amiga reset happened: take the frame from the video once */
 static int ld_mode;
 static bool ld_disc_loaded;
 static bool ld_spun_up;
@@ -398,6 +401,26 @@ static void pioneerld_vsync(void)
 		}
 	}
 #endif
+#ifdef VIDEOGRAB
+	/* After an Amiga reset the disc - a separate box - has kept spinning in
+	 * real time while the emulation stalled (memory re-allocation, the device
+	 * lists emptied until Kickstart configures the UV card again), so the
+	 * frame count fell behind the picture. Take the position from the video
+	 * once, rather than seek the picture back to the count. */
+	if (ld_resync_pending && isvideograb()) {
+		ld_resync_pending = false;
+		if (ld_mode == LD_P_PLAY) {
+			uae_s64 vf = ld_from_native(getsetpositionvideograb(-1)) - ld_video_offset();
+			if (vf >= 0 && vf != ld_frame) {
+				if (log_pioneerld)
+					write_log(_T("PIONEERLD: Amiga reset, player kept playing: frame %lld -> %lld (from the video)\n"),
+						ld_frame, vf);
+				ld_frame = vf;
+				ld_field = 0;
+			}
+		}
+	}
+#endif
 	if (ld_mode != LD_P_PLAY)
 		return;
 	/* CAV: 29.97 frames/s, one disc frame per two NTSC fields. */
@@ -459,8 +482,15 @@ static void pioneerld_vsync(void)
 	}
 }
 
+/* Power-on state of the player. Only emulator start and config load get here
+ * (pioneerld_power_on() -> pioneerld_activate()): the player is its own box
+ * on the end of a serial cable, so an Amiga reset - warm, hard, or the GUI's
+ * Reset - leaves it doing whatever it was doing, and vd takes it over again
+ * when it boots, the way the real unit does. The DUART side of the cable is
+ * reset by uvserial_hard_reset(). */
 static void pioneerld_hard_reset(int hardreset)
 {
+	ld_resync_pending = false;
 	ld_mode = LD_P_PARK;
 	ld_spun_up = false;
 	ld_frame = 0;
@@ -490,27 +520,37 @@ void pioneerld_reset(void)
 	pioneerld_hard_reset(1);
 }
 
+void pioneerld_power_on(void)
+{
+	ld_power_pending = true;
+}
+
+/* The Amiga was reset (the UV card's init runs again): the player carries on,
+ * but resynchronise its frame count with the picture (see pioneerld_vsync). */
+void pioneerld_amiga_reset(void)
+{
+	if (!ld_power_pending && ld_registered)
+		ld_resync_pending = true;
+}
+
 void pioneerld_activate(void)
 {
 	/* A hard reset (GUI Reset) empties the device lists in virtualdevice_init(),
 	 * so register every time we are called (the card's init calls us again after
-	 * a reset; the add functions ignore duplicates). Registering only once left
+	 * a reset; the add function ignores duplicates). Registering only once left
 	 * the player without its vsync after a reset: no DM frame hold, no picture
-	 * stops, no reset of the player itself. */
+	 * stops. There is deliberately no device reset handler: an Amiga reset
+	 * does not reset the player (see pioneerld_hard_reset). */
 	device_add_vsync_pre(pioneerld_vsync);
-	device_add_reset(pioneerld_hard_reset);
-	if (ld_registered)
+	if (!ld_power_pending)
 		return;
+	ld_power_pending = false;
+	pioneerld_hard_reset(1);
+	if (!ld_registered)
+		write_log(_T("PIONEERLD: LD-V8000 emulation active\n"));
+	else
+		write_log(_T("PIONEERLD: player powered on (parked)\n"));
 	ld_registered = true;
-	ld_disc_loaded = true;
-	ld_spun_up = false;
-	ld_mark_set = false;
-	ld_mode = LD_P_PARK;
-#ifdef VIDEOGRAB
-	if (isvideograb())
-		pausevideograb(1);
-#endif
-	write_log(_T("PIONEERLD: LD-V8000 emulation active\n"));
 }
 
 /* Once the disc has been started the player owns the genlock video path, even
