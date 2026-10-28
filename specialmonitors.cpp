@@ -2670,6 +2670,15 @@ end:
  *   do_genlock's area loop starts), the 480-line raster drops 4 lines at the
  *   top and 2 at the bottom of that (SMPTE RP 202 / DV). The crop is even,
  *   so the field each line belongs to does not change.
+ * - Fields: WinUAE puts the long field (LOF=1, 263 lines) on even frame
+ *   lines, the upper line of each pair (custom.cpp calculate_linetype():
+ *   LOF -> nln_upper, short -> lineno + 1), and buffer yoffset and f0 are
+ *   even, so even raster rows are the long field and odd rows the short
+ *   one. The upper field of a 525-line frame is field 2 (its first active
+ *   line is the half line 283, above line 21 of field 1), so: long field =
+ *   NTSC field 2 = raster rows 0, 2, 4...; short field = field 1 = rows 1,
+ *   3, 5... 486-row 0 is line 283 and row 1 line 21; 480-row 0 is line 285
+ *   (SMPTE 125M / RP 202: bottom field first). Nothing is relabelled here.
  * - The video is asked for once at (area width in samples) x 480, so a
  *   480-line source is only scaled horizontally; its row 0 is 486-line 4.
  *   genlock_offset_x/y move it in samples/lines; genlock_aspect and
@@ -2806,7 +2815,10 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 		sy = g->ih * 65536 / vh;
 	}
 
-	// with interlace scanlines do_genlock draws only the current field
+	// with interlace scanlines do_genlock draws only the current field.
+	// LOF has already toggled for the next field when the frame is
+	// finished, so lof_store = 1 here means the short field (odd rows) was
+	// just drawn, the same parity upstream's emulate_genlock() uses.
 	const bool onefield = interlace_seen && currprefs.gfx_iscanlines;
 	const int field = lof_store ? 1 : 0;
 
