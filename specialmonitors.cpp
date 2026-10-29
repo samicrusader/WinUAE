@@ -2768,29 +2768,39 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 #endif
 
 	// raster line 0 as a frame line (y * 2 + field, as do_genlock's loop
-	// counts them): the first line out of vertical blanking. ystart is in
-	// field lines; do_genlock's video placement (ystart - minfirstline) mixes
-	// field and frame lines and lands inside the blanking (20 frame lines
-	// early with yoffset 4, ystart 18, minfirstline 6).
-	const int f0 = g->ystart * 2 + crop;
+	// counts them). ystart is the first line out of vertical blanking in
+	// linear lines, which start at vsync: vpos 21 on OCS/ECS NTSC
+	// (VBLANK_ENDLINE_NTSC). Vsync is on vpos 3-5 and NTSC field 1's is on
+	// lines 4-6, so vpos v is NTSC line v + 1 and the 486-line raster's first
+	// line pair (lines 283 and 21) is vpos 20: one line before ystart.
+	// (do_genlock's video placement, ystart - minfirstline, mixes field and
+	// frame lines and lands inside the blanking.)
+	//
+	// genlock_raster_vdelay: under ERSY the Amiga's counters are reset by the
+	// genlock's sync, so where vpos 0 falls against the incoming video is the
+	// genlock's timing, not Agnus'. Positive = the Amiga picture sits that
+	// many field lines lower; the video does not move. Field lines, so the
+	// field each raster row belongs to is unchanged.
+	const int f0 = (g->ystart - 1) * 2 + crop;
+	const int fa = f0 - currprefs.genlock_raster_vdelay * 2;
 
 	if (genlock_raster_geom[0] != src->xoffset || genlock_raster_geom[1] != xchange || genlock_raster_geom[2] != area ||
-		genlock_raster_geom[3] != rh || genlock_raster_geom[4] != f0 || genlock_raster_geom[5] != src->inwidth) {
+		genlock_raster_geom[3] != rh || genlock_raster_geom[4] != fa || genlock_raster_geom[5] != src->inwidth) {
 		genlock_raster_geom[0] = src->xoffset;
 		genlock_raster_geom[1] = xchange;
 		genlock_raster_geom[2] = area;
 		genlock_raster_geom[3] = rh;
-		genlock_raster_geom[4] = f0;
+		genlock_raster_geom[4] = fa;
 		genlock_raster_geom[5] = src->inwidth;
 		genlock_raster_build_taps(src->xoffset, xchange, area);
 		genlock_raster_clip_logged = false;
 		const double k = (double)GENLOCK_RASTER_LINE_SHRES / GENLOCK_RASTER_LINE_SAMPLES;
 		double r0 = GENLOCK_RASTER_AREA_X0 + area / 2.0 - GENLOCK_RASTER_W / 2 * k;
 		write_log(_T("GENLOCK: raster 720x%d: area %d-%d (%d shres, %d samples), raster shres %.1f-%.1f, buffer shres %d-%d (x%d), ")
-			_T("raster line 0 = frame line %d (yoffset %d ystart %d minfirstline %d), video %dx%d at %d,%d\n"),
+			_T("raster line 0 = frame line %d (yoffset %d ystart %d minfirstline %d), Amiga vdelay %d (Amiga row 0 = frame line %d), video %dx%d at %d,%d\n"),
 			rh, g->xstart, g->xend, area, vw, r0, r0 + GENLOCK_RASTER_W * k,
 			src->xoffset, src->xoffset + src->inwidth * xchange, xchange,
-			f0, src->yoffset, g->ystart, minfirstline, vw, vh, vx0, vy0);
+			f0, src->yoffset, g->ystart, minfirstline, currprefs.genlock_raster_vdelay, fa, vw, vh, vx0, vy0);
 	}
 
 	int w = GENLOCK_RASTER_W, h = rh;
@@ -2823,7 +2833,7 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 	const int field = lof_store ? 1 : 0;
 
 	for (int r = 0; r < h; r++) {
-		const int f = f0 + r;
+		const int f = fa + r;
 		if (onefield && (f & 1) != field)
 			continue;
 		uae_u8 *d = dst->bufmem + r * dst->rowbytes;
@@ -2833,7 +2843,10 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 			line = src->bufmem + yoff * src->rowbytes;
 			lg = get_row_genlock(0, yoff);
 		}
-		if (!line || !lg) {
+		// no Amiga line here (blanking, or pushed off by the vdelay): the
+		// genlock passes the video in Overlay and Ext. Video Only
+		const bool noamiga = !line || !lg;
+		if (noamiga && (g->gmode == GENLOCK_CTRL_COMPUTER || !g->image)) {
 			memset(d, 0, w * 4);
 			continue;
 		}
@@ -2875,6 +2888,10 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 				vr = vr * g->vgain / 256;
 				vg = vg * g->vgain / 256;
 				vb = vb * g->vgain / 256;
+			}
+			if (noamiga) {
+				PRGBA(dst, d + s * 4, (uae_u8)vr, (uae_u8)vg, (uae_u8)vb, g->amix2);
+				continue;
 			}
 			// the Amiga pixels under it, each keyed on its own
 			const struct genlock_raster_tap *t = &genlock_raster_taps[s];

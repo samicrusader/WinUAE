@@ -2649,6 +2649,8 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 	cfgfile_dwrite_bool(f, _T("genlock_audio_mute"), p->genlock_audio_mute);
 	cfgfile_dwrite_strarr(f, _T("genlock_control"), genlockcontrol, p->genlock_control);
 	cfgfile_dwrite_strarr(f, _T("genlock_raster"), genlockraster, p->genlock_raster);
+	cfgfile_dwrite(f, _T("genlock_raster_vdelay"), _T("%d"), p->genlock_raster_vdelay);
+	cfgfile_dwrite(f, _T("genlock_raster_vdelay"), _T("%d"), p->genlock_raster_vdelay);
 	cfgfile_dwrite_bool(f, _T("genlock_aspect"), p->genlock_aspect);
 	cfgfile_dwrite_strarr(f, _T("genlockmode"), genlockmodes, p->genlock_image);
 	cfgfile_dwrite_str(f, _T("genlock_image"), p->genlock_image_file);
@@ -6247,6 +6249,8 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_intval(option, value, _T("genlock_mix"), &p->genlock_mix, 1)
 		|| cfgfile_intval(option, value, _T("genlock_offset_x"), &p->genlock_offset_x, 1)
 		|| cfgfile_intval(option, value, _T("genlock_offset_y"), &p->genlock_offset_y, 1)
+		|| cfgfile_intval(option, value, _T("genlock_raster_vdelay"), &p->genlock_raster_vdelay, 1)
+		|| cfgfile_intval(option, value, _T("genlock_raster_vdelay"), &p->genlock_raster_vdelay, 1)
 		|| cfgfile_intval(option, value, _T("keyboard_handshake"), &p->cs_kbhandshake, 1)
 		|| cfgfile_intval(option, value, _T("eclockphase"), &p->cs_eclockphase, 1)
 		|| cfgfile_intval(option, value, _T("chipset_rtc_adjust"), &p->cs_rtc_adjust, 1)
@@ -8941,6 +8945,8 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 	p->genlock_image = 0;
 	p->genlock_control = 0;
 	p->genlock_raster = 0;
+	p->genlock_raster_vdelay = 0;
+	p->genlock_raster_vdelay = 0;
 	p->genlock_stream[0] = 0;
 	p->genlock_video_scaler = 4;	// bicubic
 	p->genlock_video_deinterlace = 0;
@@ -9176,6 +9182,8 @@ static void buildin_default_prefs (struct uae_prefs *p)
 	p->genlock_image = 0;
 	p->genlock_control = 0;
 	p->genlock_raster = 0;
+	p->genlock_raster_vdelay = 0;
+	p->genlock_raster_vdelay = 0;
 	p->genlock_image_file[0] = 0;
 	p->genlock_font[0] = 0;
 	
