@@ -2763,6 +2763,96 @@ static bool genlock_raster_locked(void)
 	return currprefs.genlock_image >= 2 && !genlock_error;
 }
 
+/*
+ * The buffer row behind raster frame line f, and its genlock keys.
+ * Not interlaced, an Amiga line goes into both rows of its pair, but its
+ * genlock keys only into the upper one (drawing.cpp, nln_doubled) and the
+ * lower row keeps the keys of the last interlaced frame. Both fields take
+ * the upper row, as do_genlock does (doublelines). Reading the lower row
+ * striped every other raster line after a reset out of an interlaced
+ * screen, until the next interlaced one: stale key 0 showed video, stale
+ * non-zero keys the new picture.
+ */
+static bool genlock_raster_row(struct vidbuffer *src, int f, int vdbl, uae_u8 **line, uae_u8 **lg)
+{
+	const int fl = interlace_seen > 0 ? f : (f & ~1);
+	const int yoff = (fl - src->yoffset) >> vdbl;
+	*line = NULL;
+	*lg = NULL;
+	if (fl >= src->yoffset && yoff < src->inheight) {
+		*line = src->bufmem + yoff * src->rowbytes;
+		*lg = get_row_genlock(0, yoff);
+	}
+	return *line && *lg;
+}
+
+/*
+ * A line's left border: its colour (colour 0, or black under ECS BRDRBLNK)
+ * as a buffer pixel, and how many pixels at the buffer's left edge are not
+ * really drawn. WinUAE leaves the first few pixels of a line black, with
+ * either no key (0xff) or key 0, depending on the line's long/short timing:
+ * that is the dotted left edge. So the colour is the first non-black key 0
+ * pixel left of the picture (black only if the whole border is), and the
+ * black run at the edge counts as border too.
+ */
+#define GENLOCK_RASTER_EDGE_MAX 16
+static bool genlock_raster_line_border(struct vidbuffer *src, const uae_u8 *line, const uae_u8 *lg, uae_u8 *c0, int *lead)
+{
+	const int n = src->pixbytes < 4 ? src->pixbytes : 4;
+	int first = -1;
+	*lead = 0;
+	for (int x = 0; x < src->inwidth; x++) {
+		const uae_u8 key = lg[x];
+		const uae_u8 *p = line + x * src->pixbytes;
+		const bool black = !p[0] && !p[1] && !p[2];
+		if (*lead == x && x < GENLOCK_RASTER_EDGE_MAX && (key == 0xff || (key == 0 && black)))
+			(*lead)++;
+		if (key == 0xff)
+			continue;
+		if (key != 0)
+			break;
+		if (first < 0)
+			first = x;
+		if (!black) {
+			memcpy(c0, p, n);
+			return true;
+		}
+	}
+	if (first >= 0) {
+		memcpy(c0, line + first * src->pixbytes, n);
+		return true;
+	}
+	return false;
+}
+
+/*
+ * What the genlock shows where the Amiga has no picture: samples left or
+ * right of WinUAE's buffer, pixels it left undrawn (blanking) and lines it
+ * never drew (vertical blanking, or pushed off by the vdelay). To the
+ * genlock that is all border: colour 0, keyed like any colour 0 pixel, so
+ * video in Overlay and Ext. Video Only and the colour in Computer Only.
+ */
+STATIC_INLINE void genlock_raster_border_px(const struct genlock_raster_src *g, int vr, int vg, int vb, const uae_u8 *c0,
+	int *r1, int *g1, int *b1, int *a1)
+{
+	if (g->gmode == GENLOCK_CTRL_EXTERNAL || g->gmode == GENLOCK_CTRL_OVERLAY) {
+		*a1 = g->amix2;
+		*r1 = vr;
+		*g1 = vg;
+		*b1 = vb;
+		if (g->mix2 && g->gmode == GENLOCK_CTRL_OVERLAY) {
+			*r1 = (g->mix1 * vr + g->mix2 * c0[2]) / 256;
+			*g1 = (g->mix1 * vg + g->mix2 * c0[1]) / 256;
+			*b1 = (g->mix1 * vb + g->mix2 * c0[0]) / 256;
+		}
+	} else {
+		*r1 = c0[2];
+		*g1 = c0[1];
+		*b1 = c0[0];
+		*a1 = 0xff;
+	}
+}
+
 static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, const struct genlock_raster_src *g)
 {
 	struct vidbuf_description *avidinfo = &adisplays[dst->monitor_id].gfxvidinfo;
@@ -2870,33 +2960,28 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 	const bool onefield = interlace_seen && currprefs.gfx_iscanlines;
 	const int field = lof_store ? 1 : 0;
 
+	// rows with no Amiga line take the border colour of the nearest line
+	// above them; the rows above the first line take that line's
+	uae_u8 c0[4] = { 0, 0, 0, 0 };
+	int lead = 0;
+	for (int r = 0; r < h; r++) {
+		uae_u8 *line, *lg;
+		if (genlock_raster_row(src, fa + r, vdbl, &line, &lg) && genlock_raster_line_border(src, line, lg, c0, &lead))
+			break;
+	}
+
 	for (int r = 0; r < h; r++) {
 		const int f = fa + r;
 		if (onefield && (f & 1) != field)
 			continue;
 		uae_u8 *d = dst->bufmem + r * dst->rowbytes;
-		// not interlaced: an Amiga line goes into both rows of its pair,
-		// but its genlock keys only into the upper one (drawing.cpp,
-		// nln_doubled) and the lower row keeps the keys of the last
-		// interlaced frame. Both fields take the upper row, as do_genlock
-		// does (doublelines). Reading the lower row striped every other
-		// raster line after a reset out of an interlaced screen, until the
-		// next interlaced one: stale key 0 showed video, stale non-zero keys
-		// the new picture.
-		const int fl = interlace_seen > 0 ? f : (f & ~1);
-		const int yoff = (fl - src->yoffset) >> vdbl;
-		uae_u8 *line = NULL, *lg = NULL;
-		if (fl >= src->yoffset && yoff < src->inheight) {
-			line = src->bufmem + yoff * src->rowbytes;
-			lg = get_row_genlock(0, yoff);
-		}
-		// no Amiga line here (blanking, or pushed off by the vdelay): the
-		// genlock passes the video in Overlay and Ext. Video Only
-		const bool noamiga = !line || !lg;
-		if (noamiga && (g->gmode == GENLOCK_CTRL_COMPUTER || !g->image)) {
-			memset(d, 0, w * 4);
-			continue;
-		}
+		uae_u8 *line, *lg;
+		// no Amiga line here (vertical blanking, or pushed off by the
+		// vdelay): the whole row is border
+		const bool noamiga = !genlock_raster_row(src, f, vdbl, &line, &lg);
+		lead = 0;
+		if (!noamiga)
+			genlock_raster_line_border(src, line, lg, c0, &lead);
 		uae_u8 *vrow = NULL;
 		const int j = r + crop - vtop - currprefs.genlock_offset_y;
 		if (g->image && j >= 0 && j < vh) {
@@ -2937,7 +3022,9 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 				vb = vb * g->vgain / 256;
 			}
 			if (noamiga) {
-				PRGBA(dst, d + s * 4, (uae_u8)vr, (uae_u8)vg, (uae_u8)vb, g->amix2);
+				int r1, g1, b1, a1;
+				genlock_raster_border_px(g, vr, vg, vb, c0, &r1, &g1, &b1, &a1);
+				PRGBA(dst, d + s * 4, (uae_u8)r1, (uae_u8)g1, (uae_u8)b1, (uae_u8)a1);
 				continue;
 			}
 			// the Amiga pixels under it, each keyed on its own
@@ -2946,15 +3033,16 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 			for (int k = 0; k < t->n; k++) {
 				const int x = t->x[k];
 				int r1 = 0, g1 = 0, b1 = 0, a1 = 0;
-				if (x >= 0 && x < src->inwidth) {
-					const uae_u8 key = lg[x];
+				const uae_u8 key = x >= lead && x < src->inwidth ? lg[x] : 0xff;
+				if (key == 0xff) {
+					// left or right of the buffer, or nothing drawn here
+					genlock_raster_border_px(g, vr, vg, vb, c0, &r1, &g1, &b1, &a1);
+				} else {
 					uae_u8 *sp = line + x * src->pixbytes;
 					// ZCLKEN toggles every hires pixel
 					const bool ztoggle = currprefs.gfx_resolution >= RES_HIRES ? (x & 1) != 0 : ((x >> 1) & 1) != 0;
 					const bool keyed = g->gmode == GENLOCK_CTRL_EXTERNAL || (!g->zclken && is_transparent(key)) || (g->zclken && ztoggle);
-					if (key == 0xff) {
-						// nothing drawn here
-					} else if (g->gmode == GENLOCK_CTRL_EXTERNAL || g->faded || (g->gmode == GENLOCK_CTRL_OVERLAY && keyed)) {
+					if (g->gmode == GENLOCK_CTRL_EXTERNAL || g->faded || (g->gmode == GENLOCK_CTRL_OVERLAY && keyed)) {
 						a1 = g->amix2;
 						r1 = vr;
 						g1 = vg;
