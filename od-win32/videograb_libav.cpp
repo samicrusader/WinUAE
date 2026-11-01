@@ -136,6 +136,21 @@ void videograb_update_sound(float clk)
 	vg_audio_clk = clk;
 }
 
+/* An Amiga reset runs audio_reset(), which drops every extra stream, while
+ * the video stays open across it (specialmonitor_reset), so without this the
+ * sound stopped and vg_audio_resync() logged a resync every few fields from
+ * then on. The stream gets a fresh slot; whatever it was holding back is
+ * dropped and the resync lines it up with the picture again. */
+void videograb_reset_audio(void)
+{
+	vg_state *s = vg;
+	if (!s || s->streamid <= 0)
+		return;
+	s->streamid = audio_enable_stream(true, -1, 2, audio_state_videograb, NULL);
+	s->audio_hold = 0;
+	write_log(_T("VIDEOGRAB: sound stream %d registered again after a reset\n"), s->streamid);
+}
+
 /* ------------------------------------------------------------------ */
 /* emulator-side API (videograb.h) */
 

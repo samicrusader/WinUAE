@@ -24,6 +24,8 @@ void isvideograb_status(void);
 void videograb_vsync(void);
 /* emulated audio clock, from devices_update_sound() */
 void videograb_update_sound(float clk);
+/* audio_reset() dropped the sound stream: register it again */
+void videograb_reset_audio(void);
 /* size of the genlock area; frames are delivered scaled to it */
 void setvideograbtarget(int width, int height, bool keep_aspect);
 /* the frame last returned by getvideograb() was scaled to that target */

@@ -4467,6 +4467,17 @@ void specialmonitor_reset(void)
 	fc24_reset();
 }
 
+// audio_reset() (every Amiga reset, after specialmonitor_reset()) drops
+// the extra sound streams. The genlock video is still open, so its sound
+// has to be hooked up again.
+void specialmonitor_reset_audio(void)
+{
+#ifdef VIDEOGRAB_LIBAV
+	if (genlock_video)
+		videograb_reset_audio();
+#endif
+}
+
 bool specialmonitor_need_genlock(void)
 {
 	switch (currprefs.monitoremu)

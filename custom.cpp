@@ -7008,6 +7008,9 @@ void custom_reset(bool hardreset, bool keyboardreset)
 	init_hz();
 
 	audio_reset();
+#ifdef WITH_SPECIALMONITORS
+	specialmonitor_reset_audio();
+#endif
 	if (!isrestore()) {
 		memset(&cop_state, 0, sizeof(cop_state));
 		/* must be called after audio_reset */
