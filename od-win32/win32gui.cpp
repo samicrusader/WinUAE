@@ -89,6 +89,7 @@
 #endif
 #include "specialmonitors.h"
 #include "gayle.h"
+#include "gdb_server.h"
 #ifdef FLOPPYBRIDGE
 #include "floppybridge/floppybridge_abstract.h"
 #include "floppybridge/floppybridge_lib.h"
@@ -4892,6 +4893,8 @@ static const struct miscentry misclist[] = {
 	{ 0, 1, _T("Warp mode reset"), &workprefs.turbo_boot },
 	{ 0, 1, _T("GUI game pad control"), &workprefs.win32_gui_control },
 	{ 0, 1, _T("Default on screen keyboard (Pad button 4)"), &workprefs.input_default_onscreen_keyboard },
+	// past the end of IDS_MISCLISTITEMS1-6, so the name below is used as is
+	{ 0, 0, _T("Capture mouse and keyboard automatically"), &workprefs.win32_auto_capture_input },
 	{ 0, 0, NULL }
 };
 
@@ -11246,10 +11249,54 @@ static void init_expansion_scsi_id(HWND hDlg)
 		ew(hDlg, IDC_SCSIROMID, 0);
 	}
 }
+// category (scsiromselectedmask index) whose list shows board i, -1 if none
+static int expansion_category_of(int i)
+{
+	if (expansionroms[i].romtype & ROMTYPE_CPUBOARD)
+		return -1;
+	for (int c = 0; c < (int)(sizeof scsiromselectedmask / sizeof(int)); c++) {
+		if (!(expansionroms[i].deviceflags & scsiromselectedmask[c]))
+			continue;
+		if (c == 0 && (expansionroms[i].deviceflags & (EXPANSIONTYPE_SASI | EXPANSIONTYPE_CUSTOM)))
+			continue;
+		if ((expansionroms[i].deviceflags & EXPANSIONTYPE_X86_EXPANSION) && scsiromselectedmask[c] != EXPANSIONTYPE_X86_EXPANSION)
+			continue;
+		return c;
+	}
+	return -1;
+}
+
+static bool expansion_any_enabled(int i)
+{
+	for (int j = 0; j < MAX_DUPLICATE_EXPANSION_BOARDS; j++) {
+		if (is_board_enabled(&workprefs, expansionroms[i].romtype, j))
+			return true;
+	}
+	return false;
+}
+
 static void init_expansion2(HWND hDlg, bool init)
 {
 	static int first = -1;
 	bool last = false;
+
+	if (init) {
+		// open on the remembered board (expansion_gui_page) if it is enabled, else on the first
+		// enabled board in any category, so an enabled board is never hidden behind another page
+		int sel = scsiromselected;
+		if (sel <= 0 || !expansion_any_enabled(sel)) {
+			for (int i = 1; expansionroms[i].name; i++) {
+				if (expansion_category_of(i) >= 0 && expansion_any_enabled(i)) {
+					sel = i;
+					break;
+				}
+			}
+		}
+		if (sel > 0 && expansion_category_of(sel) >= 0) {
+			scsiromselected = sel;
+			scsiromselectedcatnum = expansion_category_of(sel);
+		}
+	}
 
 	for (;;) {
 		bool matched = false;
@@ -13556,6 +13603,14 @@ static void values_to_miscdlg (HWND hDlg)
 		misc_addpri(hDlg, IDC_ACTIVE_PRIORITY, workprefs.win32_active_capture_priority);
 		misc_addpri(hDlg, IDC_INACTIVE_PRIORITY, workprefs.win32_inactive_priority);
 		misc_addpri(hDlg, IDC_MINIMIZED_PRIORITY, workprefs.win32_iconified_priority);
+#ifdef GDBSERVER
+		CheckDlgButton(hDlg, IDC_GDBSERVER, (workprefs.debugging_features & DEBUG_FEATURE_GDBSERVER) != 0);
+		xSendDlgItemMessage(hDlg, IDC_GDBSERVER_PORT, EM_LIMITTEXT, 5, 0);
+		SetDlgItemInt(hDlg, IDC_GDBSERVER_PORT, workprefs.gdb_port, FALSE);
+#else
+		ew(hDlg, IDC_GDBSERVER, FALSE);
+		ew(hDlg, IDC_GDBSERVER_PORT, FALSE);
+#endif
 
 	}
 }
@@ -13816,6 +13871,21 @@ static INT_PTR MiscDlgProc (HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 			misc_getpri (hDlg, IDC_ACTIVE_PRIORITY, &workprefs.win32_active_capture_priority);
 			misc_getpri (hDlg, IDC_INACTIVE_PRIORITY, &workprefs.win32_inactive_priority);
 			misc_getpri (hDlg, IDC_MINIMIZED_PRIORITY, &workprefs.win32_iconified_priority);
+#ifdef GDBSERVER
+			if (ischecked(hDlg, IDC_GDBSERVER))
+				workprefs.debugging_features |= DEBUG_FEATURE_GDBSERVER;
+			else
+				workprefs.debugging_features &= ~DEBUG_FEATURE_GDBSERVER;
+			if (LOWORD(wParam) == IDC_GDBSERVER_PORT && (HIWORD(wParam) == EN_CHANGE || HIWORD(wParam) == EN_KILLFOCUS)) {
+				// the same rule as gdb_port in cfgfile.cpp: 1..65535, anything else is 2345
+				BOOL ok = FALSE;
+				UINT port = GetDlgItemInt(hDlg, IDC_GDBSERVER_PORT, &ok, FALSE);
+				workprefs.gdb_port = ok && port >= 1 && port <= 65535 ? (int)port : 2345;
+				// show what was kept once the user leaves the box, not while typing
+				if (HIWORD(wParam) == EN_KILLFOCUS)
+					SetDlgItemInt(hDlg, IDC_GDBSERVER_PORT, workprefs.gdb_port, FALSE);
+			}
+#endif
 		}
 
 		switch(wParam)
@@ -18876,6 +18946,10 @@ static void values_to_portsdlg (HWND hDlg)
 					break;
 				}
 			}
+		}
+		if (result < 0 && !_tcsnicmp(workprefs.sername, _T("MODEM:"), 6)) {
+			// Hayes modem (MODEM://...): set in the config file, not offered in the list; keep it
+			result = 0;
 		}
 		if(result < 0 && workprefs.sername[0]) {
 			// Warn the user that their COM-port selection is not valid on this machine

@@ -851,6 +851,8 @@
 #define IDC_ACTIVE_NOSOUND              1535
 #define IDC_STATECLEAR                  1536
 #define IDC_MINIMIZED_NOJOY             1537
+#define IDC_GDBSERVER                   1900
+#define IDC_GDBSERVER_PORT              1901
 #define IDC_ACTIVE_NOJOY                1538
 #define IDC_ACTIVE_NOKEYBOARD           1539
 #define IDC_SER_SHARED                  1553

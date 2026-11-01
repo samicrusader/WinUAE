@@ -974,6 +974,9 @@ void serial_hsynchandler (void)
 	extern void hsyncstuff(void);
 	hsyncstuff();
 #endif
+#ifdef SERIAL_PORT
+	serial_backend_hsync();
+#endif
 	bool can = canreceive();
 
 #ifdef ARCADIA

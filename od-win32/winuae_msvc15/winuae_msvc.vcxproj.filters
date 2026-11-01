@@ -163,6 +163,9 @@
     <ClCompile Include="..\screenshot.cpp">
       <Filter>win32</Filter>
     </ClCompile>
+    <ClCompile Include="..\sersock.cpp">
+      <Filter>win32</Filter>
+    </ClCompile>
     <ClCompile Include="..\serial_win32.cpp">
       <Filter>win32</Filter>
     </ClCompile>
@@ -401,6 +404,9 @@
       <Filter>common</Filter>
     </ClCompile>
     <ClCompile Include="..\..\uaeresource.cpp">
+      <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\sermodem.cpp">
       <Filter>common</Filter>
     </ClCompile>
     <ClCompile Include="..\..\uaeserial.cpp">

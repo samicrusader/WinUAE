@@ -26,6 +26,8 @@
 #include "autoconf.h"
 #include "traps.h"
 #include "od-win32/parser.h"
+#include "sersock.h"
+#include "sermodem.h"
 #include "od-win32/midi.h"
 #include "od-win32/ahidsound.h"
 #include "picasso96_win.h"
@@ -945,6 +947,27 @@ static PADDRINFOW socketinfo;
 static char socketaddr[sizeof(SOCKADDR_INET)];
 static BOOL tcpserial;
 
+/* TCP://host:port/connect (reconnecting client) and MODEM://... (Hayes modem),
+   see include/sersock.h and include/sermodem.h */
+static struct sersock *serclient;
+static struct sermodem *sermodem;
+static int serbackend_hsyncs;
+
+/* called every scanline from serial_hsynchandler(): keeps the client's
+   reconnects and the modem's rings and timers going whatever the receiver does */
+void serial_backend_hsync(void)
+{
+	if (!serclient && !sermodem)
+		return;
+	if (++serbackend_hsyncs < 32)
+		return;
+	serbackend_hsyncs = 0;
+	if (serclient)
+		sersock_poll(serclient);
+	if (sermodem)
+		sermodem_poll(sermodem);
+}
+
 static bool tcp_is_connected (void)
 {
 	socklen_t sa_len = sizeof SOCKADDR_INET;
@@ -1204,6 +1227,16 @@ int openser (const TCHAR *sername)
 {
 	COMMTIMEOUTS CommTimeOuts;
 
+	if (!_tcsnicmp (sername, _T("MODEM:"), 6)) {
+		sermodem = sermodem_open(_T("SERIAL_MODEM"), sername);
+		return sermodem != NULL;
+	}
+	if (sersock_is_client (sername)) {
+		struct sersock_spec sp;
+		sersock_parse(sername, &sp);
+		serclient = sersock_connect(_T("SERIAL_TCP"), sp.host, sp.port, sp.reconnect);
+		return serclient != NULL;
+	}
 	if (!_tcsnicmp (sername, _T("TCP://"), 6)) {
 		return opentcp (sername + 6);
 	}
@@ -1291,6 +1324,14 @@ int openser (const TCHAR *sername)
 
 void closeser (void)
 {
+	if (serclient) {
+		sersock_free(serclient);
+		serclient = NULL;
+	}
+	if (sermodem) {
+		sermodem_free(sermodem);
+		sermodem = NULL;
+	}
 	if (tcpserial) {
 		closetcp ();
 		tcpserial = FALSE;
@@ -1388,7 +1429,13 @@ void writeser (int c)
 #if 0
 	write_log(_T("writeser %04X (buf=%d)\n"), c, datainoutput);
 #endif
-	if (tcpserial) {
+	if (serclient || sermodem) {
+		uae_u8 b = (uae_u8)c;
+		if (serclient)
+			sersock_write(serclient, &b, 1);
+		else
+			sermodem_write(sermodem, &b, 1);
+	} else if (tcpserial) {
 		if (tcp_is_connected ()) {
 			char buf[1];
 			buf[0] = (char)c;
@@ -1454,6 +1501,14 @@ int readseravail(bool *breakcond)
 
 	if (breakcond)
 		*breakcond = false;
+	if (serclient) {
+		sersock_poll(serclient);
+		return sersock_avail(serclient);
+	}
+	if (sermodem) {
+		sermodem_poll(sermodem);
+		return sermodem_avail(sermodem);
+	}
 	if (tcpserial) {
 		if (tcp_is_connected ()) {
 			struct timeval tv;
@@ -1498,6 +1553,14 @@ int readser (int *buffer)
 	DWORD dwErrorFlags;
 	DWORD actual;
 
+	if (serclient || sermodem) {
+		uae_u8 b;
+		int n = serclient ? sersock_read(serclient, &b, 1) : sermodem_read(sermodem, &b, 1);
+		if (n != 1)
+			return 0;
+		*buffer = b;
+		return 1;
+	}
 	if (tcpserial) {
 		if (tcp_is_connected ()) {
 			char buf[1];
@@ -1569,6 +1632,16 @@ void getserstat (int *pstatus)
 	int status = 0;
 
 	*pstatus = 0;
+	if (sermodem) {
+		// the modem keeps CTS and DSR up; CD follows the call (AT&C1), RI the rings
+		status = TIOCM_CTS | TIOCM_DSR;
+		if (sermodem_carrier(sermodem))
+			status |= TIOCM_CAR;
+		if (sermodem_ring(sermodem))
+			status |= TIOCM_RI;
+		*pstatus = status;
+		return;
+	}
 	if (hCom == INVALID_HANDLE_VALUE || !currprefs.use_serial)
 		return;
 
@@ -1588,6 +1661,8 @@ void getserstat (int *pstatus)
 void setserstat (int mask, int onoff)
 {
 	if (mask & TIOCM_DTR) {
+		if (sermodem)
+			sermodem_dtr(sermodem, onoff != 0);
 		if (currprefs.use_serial && hCom != INVALID_HANDLE_VALUE) {
 			EscapeCommFunction(hCom, onoff ? SETDTR : CLRDTR);
 		}
@@ -1631,6 +1706,8 @@ int setbaud(int baud, int org_baud)
 #endif
 		if (!currprefs.use_serial)
 			return 1;
+		if (sermodem)
+			sermodem_set_dte_rate(sermodem, baud);
 		if (hCom != INVALID_HANDLE_VALUE)  {
 			dcb.BaudRate = baud;
 			if (!currprefs.serial_hwctsrts) {
@@ -2069,7 +2146,7 @@ void sernametodev (TCHAR *sername)
 			return;
 		}
 	}
-	if (!_tcsncmp (sername, _T("TCP:"), 4))
+	if (!_tcsncmp (sername, _T("TCP:"), 4) || !_tcsnicmp (sername, _T("MODEM:"), 6))
 		return;
 	sername[0] = 0;
 }
@@ -2077,7 +2154,7 @@ void sernametodev (TCHAR *sername)
 void serdevtoname (TCHAR *sername)
 {
 	int i;
-	if (!_tcsncmp (sername, _T("TCP:"), 4))
+	if (!_tcsncmp (sername, _T("TCP:"), 4) || !_tcsnicmp (sername, _T("MODEM:"), 6))
 		return;
 	for (i = 0; i < MAX_SERPAR_PORTS && comports[i]; i++) {
 		if (!_tcscmp (sername, comports[i]->dev)) {
