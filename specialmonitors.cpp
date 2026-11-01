@@ -2805,11 +2805,11 @@ static bool genlock_raster_line_border(struct vidbuffer *src, const uae_u8 *line
 		const uae_u8 key = lg[x];
 		const uae_u8 *p = line + x * src->pixbytes;
 		const bool black = !p[0] && !p[1] && !p[2];
-		if (*lead == x && x < GENLOCK_RASTER_EDGE_MAX && (key == 0xff || (key == 0 && black)))
+		if (*lead == x && x < GENLOCK_RASTER_EDGE_MAX && (key == 0xff || ((key == 0 || key == GENLOCK_RASTER_BORDER_KEY) && black)))
 			(*lead)++;
 		if (key == 0xff)
 			continue;
-		if (key != 0)
+		if (key != 0 && key != GENLOCK_RASTER_BORDER_KEY)
 			break;
 		if (first < 0)
 			first = x;
@@ -2831,11 +2831,23 @@ static bool genlock_raster_line_border(struct vidbuffer *src, const uae_u8 *line
  * never drew (vertical blanking, or pushed off by the vdelay). To the
  * genlock that is all border: colour 0, keyed like any colour 0 pixel, so
  * video in Overlay and Ext. Video Only and the colour in Computer Only.
+ * genlock_raster_border=black|color0 shows black or colour 0 there instead,
+ * and in the border drawing.cpp marks (GENLOCK_RASTER_BORDER_KEY), in
+ * Overlay and Computer Only; Ext. Video Only stays all video.
  */
 STATIC_INLINE void genlock_raster_border_px(const struct genlock_raster_src *g, int vr, int vg, int vb, const uae_u8 *c0,
 	int *r1, int *g1, int *b1, int *a1)
 {
-	if (g->gmode == GENLOCK_CTRL_EXTERNAL || g->gmode == GENLOCK_CTRL_OVERLAY) {
+	const int bmode = currprefs.genlock_raster_border;
+	if (g->gmode != GENLOCK_CTRL_EXTERNAL && bmode == GENLOCK_RASTER_BORDER_BLACK) {
+		*r1 = *g1 = *b1 = 0;
+		*a1 = 0xff;
+	} else if (g->gmode != GENLOCK_CTRL_EXTERNAL && bmode == GENLOCK_RASTER_BORDER_COLOR0) {
+		*r1 = c0[2];
+		*g1 = c0[1];
+		*b1 = c0[0];
+		*a1 = 0xff;
+	} else if (g->gmode == GENLOCK_CTRL_EXTERNAL || g->gmode == GENLOCK_CTRL_OVERLAY) {
 		*a1 = g->amix2;
 		*r1 = vr;
 		*g1 = vg;
@@ -3034,8 +3046,9 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 				const int x = t->x[k];
 				int r1 = 0, g1 = 0, b1 = 0, a1 = 0;
 				const uae_u8 key = x >= lead && x < src->inwidth ? lg[x] : 0xff;
-				if (key == 0xff) {
-					// left or right of the buffer, or nothing drawn here
+				if (key == 0xff || key == GENLOCK_RASTER_BORDER_KEY) {
+					// left or right of the buffer, nothing drawn here, or
+					// border told apart from colour 0
 					genlock_raster_border_px(g, vr, vg, vb, c0, &r1, &g1, &b1, &a1);
 				} else {
 					uae_u8 *sp = line + x * src->pixbytes;

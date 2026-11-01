@@ -316,6 +316,10 @@ static int resolution_count[RES_MAX + 1], lines_count;
 static int center_reset;
 static bool init_genlock_data;
 bool need_genlock_data;
+// the genlock buffer byte for a transparent border pixel: 0 like colour 0,
+// or GENLOCK_RASTER_BORDER_KEY while genlock_raster_border needs border told
+// apart from colour 0 (OCS/ECS only: AGA keys hold colour indices)
+static uae_u8 genlock_border_key;
 int video_recording_active;
 
 /* Lookup tables for dual playfields.  The dblpf_*1 versions are for the case
@@ -1260,27 +1264,27 @@ static bool get_genlock_transparency_fast(uae_u8 v)
 	}
 }
 
-static bool get_genlock_transparency_border(void)
+static uae_u8 get_genlock_transparency_border(void)
 {
 	if (!ecs_genlock_features_active) {
-		return false;
+		return genlock_border_key;
 	} else {
 		// border color with BRDNTRAN bit set = not transparent
 		if (bplcon3_denise & 0x0010)
-			return true;
-		return get_genlock_very_rare_and_complex_case(0);
+			return 1;
+		return get_genlock_very_rare_and_complex_case(0) ? 1 : genlock_border_key;
 	}
 }
 
-static bool get_genlock_transparency_border_fast(uae_u16 bplcon3)
+static uae_u8 get_genlock_transparency_border_fast(uae_u16 bplcon3)
 {
 	if (!ecs_genlock_features_active) {
-		return false;
+		return genlock_border_key;
 	} else {
 		// border color with BRDNTRAN bit set = not transparent
 		if (bplcon3 & 0x0010)
-			return true;
-		return get_genlock_very_rare_and_complex_case(0);
+			return 1;
+		return get_genlock_very_rare_and_complex_case(0) ? 1 : genlock_border_key;
 	}
 }
 
@@ -2131,6 +2135,8 @@ static void finish_drawing_frame(bool drawlines)
 
 	// genlock
 	specialmonitor_update_genlock();
+	genlock_border_key = currprefs.genlock_raster && currprefs.ntscmode && currprefs.genlock_raster_border != GENLOCK_RASTER_BORDER_VIDEO &&
+		!aga_mode && !currprefs.monitoremu ? GENLOCK_RASTER_BORDER_KEY : 0;
 	if (currprefs.genlock_image && (currprefs.genlock || currprefs.genlock_effects) && !currprefs.monitoremu &&
 		vidinfo->tempbuffer.bufmem_allocated && currprefs.gfx_overscanmode < OVERSCANMODE_ULTRA) {
 		if (!denise_lock()) {
@@ -7443,7 +7449,7 @@ void draw_denise_border_line_fast(int gfx_ypos, bool blank, enum nln_how how, st
 			if (total > max) {
 				total = max;
 			}
-			memset(gbufp, 0, total);
+			memset(gbufp, genlock_border_key, total);
 		}
 	}
 }

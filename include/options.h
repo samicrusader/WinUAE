@@ -696,6 +696,11 @@ struct uae_prefs {
 	int genlock_raster_vdelay; // field lines the genlock's sync puts the Amiga below the video (raster only)
 	int genlock_raster_hdelay; // samples the genlock's sync puts the Amiga right of the video (raster only)
 #define GENLOCK_RASTER_DELAY_AUTO -1000 // delays not set: what the genlock does with or without an input
+	int genlock_raster_border; // GENLOCK_RASTER_BORDER_*: what the raster shows in the Amiga's border
+#define GENLOCK_RASTER_BORDER_VIDEO 0 // keyed like colour 0 (video in Overlay, colour 0 in Computer Only)
+#define GENLOCK_RASTER_BORDER_BLACK 1 // black, except in Ext. Video Only
+#define GENLOCK_RASTER_BORDER_COLOR0 2 // colour 0, never keyed, except in Ext. Video Only
+#define GENLOCK_RASTER_BORDER_KEY 0xfe // genlock buffer byte for a border pixel when it is told apart (OCS/ECS only)
 	TCHAR genlock_image_file[MAX_DPATH];
 	TCHAR genlock_video_file[MAX_DPATH];
 	int genlock_ld_offset;

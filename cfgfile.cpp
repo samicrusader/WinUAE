@@ -229,6 +229,7 @@ static const TCHAR *cdmodes[] = { _T("disabled"), _T(""), _T("image"), _T("ioctl
 static const TCHAR *cdconmodes[] = { _T(""), _T("uae"), _T("ide"), _T("scsi"), _T("cdtv"), _T("cd32"), 0 };
 static const TCHAR *genlockcontrol[] = { _T("none"), _T("serial"), _T("fader"), NULL };
 static const TCHAR *genlockraster[] = { _T("none"), _T("bt601_480"), _T("bt601_486"), NULL };
+static const TCHAR *genlockrasterborder[] = { _T("video"), _T("black"), _T("color0"), NULL };
 static const TCHAR *genlockmodes[] = { _T("none"), _T("noise"), _T("testcard"), _T("image"), _T("video"), _T("stream"), _T("ld"), _T("sony_ld"), _T("pioneer_ld"), NULL };
 // indexes match od-win32/videograb_libav.cpp vg_scaler_flags / vg_deint_filters
 static const TCHAR *genlockscalers[] = { _T("none"), _T("point"), _T("fast_bilinear"), _T("bilinear"), _T("bicubic"), _T("lanczos"), _T("spline"), _T("area"), NULL };
@@ -2655,6 +2656,8 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 		cfgfile_dwrite(f, _T("genlock_raster_vdelay"), _T("%d"), p->genlock_raster_vdelay);
 	if (p->genlock_raster_hdelay != GENLOCK_RASTER_DELAY_AUTO)
 		cfgfile_dwrite(f, _T("genlock_raster_hdelay"), _T("%d"), p->genlock_raster_hdelay);
+	if (p->genlock_raster_border != GENLOCK_RASTER_BORDER_VIDEO)
+		cfgfile_dwrite_strarr(f, _T("genlock_raster_border"), genlockrasterborder, p->genlock_raster_border);
 	cfgfile_dwrite_bool(f, _T("genlock_aspect"), p->genlock_aspect);
 	cfgfile_dwrite_strarr(f, _T("genlockmode"), genlockmodes, p->genlock_image);
 	cfgfile_dwrite_str(f, _T("genlock_image"), p->genlock_image_file);
@@ -6294,6 +6297,7 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_strval(option, value, _T("genlockmode"), &p->genlock_image, genlockmodes, 0)
 		|| cfgfile_strval(option, value, _T("genlock_control"), &p->genlock_control, genlockcontrol, 0)
 		|| cfgfile_strval(option, value, _T("genlock_raster"), &p->genlock_raster, genlockraster, 0)
+		|| cfgfile_strval(option, value, _T("genlock_raster_border"), &p->genlock_raster_border, genlockrasterborder, 0)
 		|| cfgfile_strval(option, value, _T("genlock_video_scaler"), &p->genlock_video_scaler, genlockscalers, 0)
 		|| cfgfile_strval(option, value, _T("genlock_video_deinterlace"), &p->genlock_video_deinterlace, genlockdeints, 0)
 		|| cfgfile_strval(option, value, _T("genlock_video_fields"), &p->genlock_video_fields, genlockfields, 0)
@@ -8971,6 +8975,7 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 	p->genlock_raster = 0;
 	p->genlock_raster_vdelay = GENLOCK_RASTER_DELAY_AUTO;
 	p->genlock_raster_hdelay = GENLOCK_RASTER_DELAY_AUTO;
+	p->genlock_raster_border = GENLOCK_RASTER_BORDER_VIDEO;
 	p->genlock_stream[0] = 0;
 	p->genlock_video_scaler = 4;	// bicubic
 	p->genlock_video_deinterlace = 0;
@@ -9208,6 +9213,7 @@ static void buildin_default_prefs (struct uae_prefs *p)
 	p->genlock_raster = 0;
 	p->genlock_raster_vdelay = GENLOCK_RASTER_DELAY_AUTO;
 	p->genlock_raster_hdelay = GENLOCK_RASTER_DELAY_AUTO;
+	p->genlock_raster_border = GENLOCK_RASTER_BORDER_VIDEO;
 	p->genlock_image_file[0] = 0;
 	p->genlock_font[0] = 0;
 	
