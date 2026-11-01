@@ -2875,9 +2875,18 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 		if (onefield && (f & 1) != field)
 			continue;
 		uae_u8 *d = dst->bufmem + r * dst->rowbytes;
-		const int yoff = (f - src->yoffset) >> vdbl;
+		// not interlaced: an Amiga line goes into both rows of its pair,
+		// but its genlock keys only into the upper one (drawing.cpp,
+		// nln_doubled) and the lower row keeps the keys of the last
+		// interlaced frame. Both fields take the upper row, as do_genlock
+		// does (doublelines). Reading the lower row striped every other
+		// raster line after a reset out of an interlaced screen, until the
+		// next interlaced one: stale key 0 showed video, stale non-zero keys
+		// the new picture.
+		const int fl = interlace_seen > 0 ? f : (f & ~1);
+		const int yoff = (fl - src->yoffset) >> vdbl;
 		uae_u8 *line = NULL, *lg = NULL;
-		if (f >= src->yoffset && yoff < src->inheight) {
+		if (fl >= src->yoffset && yoff < src->inheight) {
 			line = src->bufmem + yoff * src->rowbytes;
 			lg = get_row_genlock(0, yoff);
 		}
