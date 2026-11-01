@@ -24,6 +24,7 @@ void closeprinter(void);
 void flushprinter(void);
 int checkserwrite(int spaceneeded);
 void serialuartbreak(int);
+void serial_backend_hsync(void);
 
 void hsyncstuff(void);
 

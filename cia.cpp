@@ -2972,6 +2972,15 @@ static uae_u8 getclockreg(int addr, struct tm *ct)
 	return v;
 }
 
+// the clock the guest sees: host time, chipset_rtc_adjust, and whatever the guest set
+static time_t rtc_time(void)
+{
+	if (currprefs.cs_rtc == 2) { /* RF5C01A */
+		return rtc_ricoh_time(&rtc_ricoh);
+	}
+	return rtc_msm_time(&rtc_msm);
+}
+
 static void write_battclock(void)
 {
 	if (!currprefs.rtcfile[0] || currprefs.cs_rtc == 0)
@@ -2981,8 +2990,7 @@ static void write_battclock(void)
 	struct zfile *f = zfile_fopen(path, _T("wb"));
 	if (f) {
 		struct tm *ct;
-		time_t t = time(0);
-		t += currprefs.cs_rtc_adjust;
+		time_t t = rtc_time();
 		ct = localtime(&t);
 		uae_u8 od;
 		if (currprefs.cs_rtc == 2) {
@@ -3022,6 +3030,7 @@ void rtc_hardreset(void)
 		rtc_msm.clock_control_e = 0;
 		rtc_msm.clock_control_f = 0x4; /* 24/12 */
 		rtc_msm.delayed_write = 0;
+		rtc_msm.shadow_valid = false;
 	} else if (currprefs.cs_rtc == 2) { /* RF5C01A */
 		clock_bank.name = _T("Battery backed up clock (RF5C01A)");
 		rtc_ricoh.clock_control_d = 0x8; /* Timer EN */
@@ -3031,6 +3040,7 @@ void rtc_hardreset(void)
 		memset(rtc_ricoh.rtc_alarm, 0, RF5C01A_RAM_SIZE);
 		rtc_ricoh.rtc_alarm[10] = 1; /* 24H mode */
 		rtc_ricoh.delayed_write = 0;
+		rtc_ricoh.shadow_valid = false;
 	}
 	if (currprefs.rtcfile[0]) {
 		TCHAR path[MAX_DPATH];
@@ -3089,8 +3099,7 @@ static uae_u32 REGPARAM2 clock_bget(uaecptr addr)
 	if ((addr & 3) == 2 || (addr & 3) == 0 || currprefs.cs_rtc == 0) {
 		return dummy_get_safe(addr, 1, false, v);
 	}
-	time_t t = time(0);
-	t += currprefs.cs_rtc_adjust;
+	time_t t = rtc_time();
 	ct = localtime(&t);
 	addr >>= 2;
 	return getclockreg(addr, ct);
