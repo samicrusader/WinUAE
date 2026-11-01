@@ -1104,14 +1104,15 @@ end:
 	return 0;
 }
 
-/* Serial status line feeds (CTS, DSR, CD): one TCP listener per line whose
-   bytes serial_win32.cpp turns into line states (linefeed_hsync). One client
-   per line at a time, non-blocking throughout. */
-#define LINEFEEDS 3
-static SOCKET linefeed_sock[LINEFEEDS] = { INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET };
-static SOCKET linefeed_conn[LINEFEEDS] = { INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET };
+/* Serial status line feeds (CTS, DSR, CD) and the parallel SEL feed (line 3):
+   one TCP listener per line whose bytes serial_win32.cpp turns into line
+   states (linefeed_hsync). One client per line at a time, non-blocking
+   throughout. */
+#define LINEFEEDS 4
+static SOCKET linefeed_sock[LINEFEEDS] = { INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET };
+static SOCKET linefeed_conn[LINEFEEDS] = { INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET, INVALID_SOCKET };
 static bool linefeed_wsa[LINEFEEDS];
-static const TCHAR *linefeed_name[LINEFEEDS] = { _T("CTS"), _T("DSR"), _T("CD") };
+static const TCHAR *linefeed_name[LINEFEEDS] = { _T("CTS"), _T("DSR"), _T("CD"), _T("SEL") };
 
 void linefeed_close(int line)
 {

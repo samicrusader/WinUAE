@@ -569,6 +569,7 @@ struct uae_prefs {
 	int serial_stopbits;
 	int serial_crlf;
 	struct serial_linefeed serial_linefeed[SERIAL_LINEFEEDS];
+	struct serial_linefeed parallel_sel_feed; // level only: CIA-B PRA bit 2 (parallel SEL)
 	bool parallel_demand;
 	int parallel_matrix_emulation;
 	bool parallel_postscript_emulation;

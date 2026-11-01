@@ -2059,6 +2059,10 @@ static uae_u8 ReadCIAB(uae_u32 addr, uae_u32 *flags)
 #ifdef SERIAL_PORT
 		tmp = serial_readstatus(tmp, c->dra);
 #endif
+#ifdef _WIN32
+		// parallel SEL level feed (serial_win32.cpp): owns bit 2 while enabled
+		tmp = parallel_sel_feed_status(tmp);
+#endif
 		tmp = dongle_cia_read(1, reg, c->pra, tmp);
 #if DONGLE_DEBUG > 0
 		if (notinrom())

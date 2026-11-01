@@ -2241,6 +2241,8 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 		_stprintf(name, _T("serial_%s_feed_baud"), serial_linefeed_names[i]);
 		cfgfile_dwrite(f, name, _T("%d"), lf->baud);
 	}
+	cfgfile_dwrite_bool(f, _T("parallel_sel_feed"), p->parallel_sel_feed.enabled);
+	cfgfile_dwrite_str(f, _T("parallel_sel_feed_listen"), p->parallel_sel_feed.listen);
 	cfgfile_write_strarr (f, _T("scsi"), scsimode, p->scsi);
 	cfgfile_write_bool (f, _T("uaeserial"), p->uaeserial);
 	cfgfile_write_bool (f, _T("sana2"), p->sana2);
@@ -6026,6 +6028,10 @@ static int cfgfile_parse_linefeed(struct uae_prefs *p, const TCHAR *option, cons
 			return 1;
 		}
 	}
+	if (cfgfile_yesno(option, value, _T("parallel_sel_feed"), &p->parallel_sel_feed.enabled))
+		return 1;
+	if (cfgfile_string(option, value, _T("parallel_sel_feed_listen"), p->parallel_sel_feed.listen, sizeof p->parallel_sel_feed.listen / sizeof(TCHAR)))
+		return 1;
 	return 0;
 }
 
@@ -8724,6 +8730,10 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 		lf->baud = 110;
 		_stprintf(lf->listen, _T("127.0.0.1:%d"), 1235 + i);
 	}
+	p->parallel_sel_feed.enabled = false;
+	p->parallel_sel_feed.mode = SERIAL_LINEFEED_MODE_LEVEL;
+	p->parallel_sel_feed.baud = 110;
+	_tcscpy(p->parallel_sel_feed.listen, _T("127.0.0.1:1238"));
 	for (int i = 0; i < 4; i++) {
 		p->uvserial_port[i][0] = 0;
 		p->uvserial_cd_feed[i][0] = 0;

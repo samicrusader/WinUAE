@@ -844,6 +844,14 @@ static void serdatcopy(void)
      are ignored. The level is held across disconnects.
    While a feed is enabled it owns its line, whatever the serial port reports. */
 static const uae_u8 linefeed_bit[SERIAL_LINEFEEDS] = { 0x10, 0x08, 0x20 }; // CIA-B PRA: /CTS, /DSR, /CD
+/* The parallel SEL feed (parallel_sel_feed, default 127.0.0.1:1238) is one
+   more line on the same code, level mode only, at index LINEFEED_SEL. SEL is
+   active high (CIA-B PRA bit 2 = 1 = selected), so here '1'/0x01 drives the
+   pin high and '0'/0x00 low. It starts high, the level an unconnected port
+   reads, so enabling the feed changes nothing until a '0' arrives (EPG
+   Esquire run with GRANADA treats SEL low as its trigger). */
+#define LINEFEED_SEL SERIAL_LINEFEEDS
+#define LINEFEEDS_ALL (SERIAL_LINEFEEDS + 1)
 struct linefeed_state
 {
 	bool on;
@@ -856,7 +864,7 @@ struct linefeed_state
 	int len, pos;
 	int poll;
 };
-static struct linefeed_state linefeeds[SERIAL_LINEFEEDS];
+static struct linefeed_state linefeeds[LINEFEEDS_ALL];
 
 static void linefeed_reset(int line)
 {
@@ -864,6 +872,8 @@ static void linefeed_reset(int line)
 	linefeed_close(line);
 	memset(lf, 0, sizeof *lf);
 	lf->bit = -1;
+	if (line == LINEFEED_SEL)
+		lf->asserted = true; // SEL high
 }
 
 // serial mode: load the next byte and start its start bit; false if there is none
@@ -886,13 +896,15 @@ static bool linefeed_next(struct linefeed_state *lf, int line)
 static void linefeed_hsync_line(int line)
 {
 	struct linefeed_state *lf = &linefeeds[line];
-	const struct serial_linefeed *cfg = &currprefs.serial_linefeed[line];
+	const struct serial_linefeed *cfg = line == LINEFEED_SEL ? &currprefs.parallel_sel_feed : &currprefs.serial_linefeed[line];
 
 	if (cfg->enabled != lf->on || (lf->on && memcmp(cfg, &lf->cfg, sizeof *cfg))) {
 		linefeed_reset(line);
 		if (cfg->enabled) {
 			lf->on = true;
 			lf->cfg = *cfg;
+			if (line == LINEFEED_SEL)
+				lf->cfg.mode = SERIAL_LINEFEED_MODE_LEVEL;
 			linefeed_open(line, lf->cfg.listen);
 		}
 	}
@@ -942,15 +954,28 @@ static void linefeed_hsync_line(int line)
 
 static void linefeed_hsync(void)
 {
-	for (int i = 0; i < SERIAL_LINEFEEDS; i++)
+	for (int i = 0; i < LINEFEEDS_ALL; i++)
 		linefeed_hsync_line(i);
 }
 
 // emulator shutdown (devices.cpp); a settings change is picked up by linefeed_hsync
 void serial_linefeed_free(void)
 {
-	for (int i = 0; i < SERIAL_LINEFEEDS; i++)
+	for (int i = 0; i < LINEFEEDS_ALL; i++)
 		linefeed_reset(i);
+}
+
+// CIA-B PRA read (cia.cpp): the SEL feed owns bit 2 while it is enabled
+uae_u8 parallel_sel_feed_status(uae_u8 v)
+{
+	const struct linefeed_state *lf = &linefeeds[LINEFEED_SEL];
+	if (!lf->on)
+		return v;
+	if (lf->asserted)
+		v |= 0x04;
+	else
+		v &= ~0x04;
+	return v;
 }
 
 // CIA-B PRA status bits are active low: 0 = asserted

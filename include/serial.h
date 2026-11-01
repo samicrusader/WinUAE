@@ -16,6 +16,7 @@ extern void serial_init (void);
 extern void serial_exit (void);
 #ifdef _WIN32
 extern void serial_linefeed_free(void);
+extern uae_u8 parallel_sel_feed_status(uae_u8 v);
 #endif
 extern void serial_dtr_off (void);
 extern void serial_dtr_on (void);

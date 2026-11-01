@@ -2557,6 +2557,9 @@ int check_prefs_changed_gfx(void)
 		// the line feeds pick their changes up themselves (serial_win32.cpp linefeed_hsync)
 		memcpy(currprefs.serial_linefeed, changed_prefs.serial_linefeed, sizeof currprefs.serial_linefeed);
 	}
+	if (memcmp(&currprefs.parallel_sel_feed, &changed_prefs.parallel_sel_feed, sizeof currprefs.parallel_sel_feed)) {
+		memcpy(&currprefs.parallel_sel_feed, &changed_prefs.parallel_sel_feed, sizeof currprefs.parallel_sel_feed);
+	}
 	if (currprefs.win32_midiindev != changed_prefs.win32_midiindev ||
 		currprefs.win32_midioutdev != changed_prefs.win32_midioutdev ||
 		currprefs.win32_midirouter != changed_prefs.win32_midirouter)
