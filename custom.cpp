@@ -2140,7 +2140,11 @@ static void init_hz_reset(void)
 	linear_hpos_prev[2] = linear_hpos;
 	current_linear_vpos = linear_vpos;
 	current_linear_hpos = linear_hpos;
-	current_linear_vpos_nom = current_linear_vpos;
+	// nominal lines, as the per-field update sets it: without the long
+	// field's extra line, else a reset during a long field left vblank_hz
+	// (and the frame pacing) at 263.5 lines, 59.71 Hz NTSC, until the
+	// display mode next changed
+	current_linear_vpos_nom = current_linear_vpos - lof_store;
 	current_linear_hpos_short = linear_hpos;
 	current_linear_hpos_temp = current_linear_hpos;
 	current_linear_vpos_temp = current_linear_vpos;
