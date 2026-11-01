@@ -2773,12 +2773,19 @@ static bool genlock_raster_locked(void)
  * screen, until the next interlaced one: stale key 0 showed video, stale
  * non-zero keys the new picture.
  */
-static bool genlock_raster_row(struct vidbuffer *src, int f, int vdbl, uae_u8 **line, uae_u8 **lg)
+static bool genlock_raster_row(struct vidbuffer *src, int f, int vdbl, int ystart, uae_u8 **line, uae_u8 **lg)
 {
 	const int fl = interlace_seen > 0 ? f : (f & ~1);
 	const int yoff = (fl - src->yoffset) >> vdbl;
 	*line = NULL;
 	*lg = NULL;
+	// the buffer starts a line before vertical blanking ends (ystart), and
+	// WinUAE draws that line black with key 0 on one frame and leaves it
+	// undrawn (0xff) on the next: it is blanking, so it is no Amiga line.
+	// Taking it for one made raster rows 0-5 flicker between the border
+	// colour and black on a non-interlaced screen.
+	if (fl < ystart * 2)
+		return false;
 	if (fl >= src->yoffset && yoff < src->inheight) {
 		*line = src->bufmem + yoff * src->rowbytes;
 		*lg = get_row_genlock(0, yoff);
@@ -2978,7 +2985,7 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 	int lead = 0;
 	for (int r = 0; r < h; r++) {
 		uae_u8 *line, *lg;
-		if (genlock_raster_row(src, fa + r, vdbl, &line, &lg) && genlock_raster_line_border(src, line, lg, c0, &lead))
+		if (genlock_raster_row(src, fa + r, vdbl, g->ystart, &line, &lg) && genlock_raster_line_border(src, line, lg, c0, &lead))
 			break;
 	}
 
@@ -2990,7 +2997,7 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 		uae_u8 *line, *lg;
 		// no Amiga line here (vertical blanking, or pushed off by the
 		// vdelay): the whole row is border
-		const bool noamiga = !genlock_raster_row(src, f, vdbl, &line, &lg);
+		const bool noamiga = !genlock_raster_row(src, f, vdbl, g->ystart, &line, &lg);
 		lead = 0;
 		if (!noamiga)
 			genlock_raster_line_border(src, line, lg, c0, &lead);
