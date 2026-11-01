@@ -2701,7 +2701,7 @@ struct genlock_raster_tap
 	int n;
 };
 static struct genlock_raster_tap genlock_raster_taps[GENLOCK_RASTER_W];
-static int genlock_raster_geom[6] = { -1, -1, -1, -1, -1, -1 };
+static int genlock_raster_geom[7] = { -1, -1, -1, -1, -1, -1, -1 };
 static bool genlock_raster_clip_logged;
 
 struct genlock_raster_src
@@ -2716,10 +2716,12 @@ struct genlock_raster_src
 	int xstart, xend, ystart, yend;
 };
 
-static void genlock_raster_build_taps(int xoffset, int xchange, int area)
+static void genlock_raster_build_taps(int xoffset, int xchange, int area, int hdelay)
 {
 	const double k = (double)GENLOCK_RASTER_LINE_SHRES / GENLOCK_RASTER_LINE_SAMPLES;
-	const double c = GENLOCK_RASTER_AREA_X0 + area / 2.0;
+	// raster sample 360 is the genlock area's centre, moved hdelay samples
+	// right by the genlock's sync timing
+	const double c = GENLOCK_RASTER_AREA_X0 + area / 2.0 - hdelay * k;
 	for (int s = 0; s < GENLOCK_RASTER_W; s++) {
 		struct genlock_raster_tap *t = &genlock_raster_taps[s];
 		// the sample's span in buffer pixels
@@ -2754,10 +2756,23 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 	const int area = g->xend - g->xstart;
 
 	// the video: the area's width in samples, 480 lines, row 0 on 486-line 4
-	const int vw = (area * GENLOCK_RASTER_LINE_SAMPLES + GENLOCK_RASTER_LINE_SHRES / 2) / GENLOCK_RASTER_LINE_SHRES;
-	const int vh = 480;
+	// the video is not resampled to the Amiga: the genlock passes it
+	// through on the same 13.5 MHz grid. A 720x480 or 720x486 source is
+	// already a BT.601 raster and maps sample for sample (a 480-line one on
+	// 486-lines 4..483, SMPTE RP 202); anything else is a 4:3 picture and
+	// fills the 704-sample active line, centred, 480 lines.
+	int vw = 704, vh = 480;
+#ifdef VIDEOGRAB_LIBAV
+	int sw, sh;
+	if (genlock_video && getvideograbsourcesize(&sw, &sh) && sw == GENLOCK_RASTER_W && (sh == 480 || sh == 486)) {
+		vw = sw;
+		vh = sh;
+	}
+#endif
+	const int vtop = vh == 486 ? 0 : 4; // 486-line row of the video's row 0
 	const int vx0 = (GENLOCK_RASTER_W - vw) / 2 + currprefs.genlock_offset_x;
-	const int vy0 = 4 - crop + currprefs.genlock_offset_y;
+	const int vy0 = vtop - crop + currprefs.genlock_offset_y;
+	const int hdelay = currprefs.genlock_raster_hdelay;
 	if (vw < 16)
 		return false;
 
@@ -2785,22 +2800,24 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 	const int fa = f0 - currprefs.genlock_raster_vdelay * 2;
 
 	if (genlock_raster_geom[0] != src->xoffset || genlock_raster_geom[1] != xchange || genlock_raster_geom[2] != area ||
-		genlock_raster_geom[3] != rh || genlock_raster_geom[4] != fa || genlock_raster_geom[5] != src->inwidth) {
+		genlock_raster_geom[3] != rh || genlock_raster_geom[4] != fa || genlock_raster_geom[5] != src->inwidth ||
+		genlock_raster_geom[6] != hdelay) {
 		genlock_raster_geom[0] = src->xoffset;
 		genlock_raster_geom[1] = xchange;
 		genlock_raster_geom[2] = area;
 		genlock_raster_geom[3] = rh;
 		genlock_raster_geom[4] = fa;
 		genlock_raster_geom[5] = src->inwidth;
-		genlock_raster_build_taps(src->xoffset, xchange, area);
+		genlock_raster_geom[6] = hdelay;
+		genlock_raster_build_taps(src->xoffset, xchange, area, hdelay);
 		genlock_raster_clip_logged = false;
 		const double k = (double)GENLOCK_RASTER_LINE_SHRES / GENLOCK_RASTER_LINE_SAMPLES;
-		double r0 = GENLOCK_RASTER_AREA_X0 + area / 2.0 - GENLOCK_RASTER_W / 2 * k;
+		double r0 = GENLOCK_RASTER_AREA_X0 + area / 2.0 - (GENLOCK_RASTER_W / 2 + hdelay) * k;
 		write_log(_T("GENLOCK: raster 720x%d: area %d-%d (%d shres, %d samples), raster shres %.1f-%.1f, buffer shres %d-%d (x%d), ")
-			_T("raster line 0 = frame line %d (yoffset %d ystart %d minfirstline %d), Amiga vdelay %d (Amiga row 0 = frame line %d), video %dx%d at %d,%d\n"),
+			_T("raster line 0 = frame line %d (yoffset %d ystart %d minfirstline %d), Amiga vdelay %d (Amiga row 0 = frame line %d) hdelay %d, video %dx%d at %d,%d\n"),
 			rh, g->xstart, g->xend, area, vw, r0, r0 + GENLOCK_RASTER_W * k,
 			src->xoffset, src->xoffset + src->inwidth * xchange, xchange,
-			f0, src->yoffset, g->ystart, minfirstline, currprefs.genlock_raster_vdelay, fa, vw, vh, vx0, vy0);
+			f0, src->yoffset, g->ystart, minfirstline, currprefs.genlock_raster_vdelay, fa, hdelay, vw, vh, vx0, vy0);
 	}
 
 	int w = GENLOCK_RASTER_W, h = rh;
@@ -2851,7 +2868,7 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 			continue;
 		}
 		uae_u8 *vrow = NULL;
-		const int j = r + crop - 4 - currprefs.genlock_offset_y;
+		const int j = r + crop - vtop - currprefs.genlock_offset_y;
 		if (g->image && j >= 0 && j < vh) {
 			int gy = j * sy / 65536;
 			if (gy < g->ih) {

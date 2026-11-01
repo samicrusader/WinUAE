@@ -134,6 +134,7 @@ void VGL_CALL vgl_start(vg_state *s);
 void VGL_CALL vgl_stop(vg_state *s);		/* quit, join, free everything FFmpeg */
 int VGL_CALL vgl_num_scalers(void);
 int VGL_CALL vgl_num_deints(void);
+bool VGL_CALL vgl_source_size(vg_state *s, int *width, int *height);	/* the decoder's frame size */
 
 /* shared helpers; m held */
 static inline void vg_put_frame_locked(vg_state *s, vg_frame *f)

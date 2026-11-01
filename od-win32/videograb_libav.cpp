@@ -425,6 +425,14 @@ bool getvideograbprescaled(void)
 		(abs(f->w - s->target_w) <= 8 || abs(f->h - s->target_h) <= 8);
 }
 
+bool getvideograbsourcesize(int *width, int *height)
+{
+	vg_state *s = vg;
+	if (!s)
+		return false;
+	return vgl_source_size(s, width, height);
+}
+
 void setvideograbtarget(int width, int height, bool keep_aspect)
 {
 	vg_state *s = vg;

@@ -2169,6 +2169,7 @@ int check_prefs_changed_gfx(void)
 	// raster mode changes the output buffer geometry (720xN, hardwired position): reopen like an overscan change
 	c |= currprefs.genlock_raster != changed_prefs.genlock_raster ? (2 | 8) : 0;
 	c |= currprefs.genlock_raster_vdelay != changed_prefs.genlock_raster_vdelay ? (2 | 8) : 0;
+	c |= currprefs.genlock_raster_hdelay != changed_prefs.genlock_raster_hdelay ? (2 | 8) : 0;
 	// read from currprefs on every use (specialmonitors.cpp tracks the control lines and the
 	// fader whatever the setting), so a redraw is all a change needs
 	c |= currprefs.genlock_control != changed_prefs.genlock_control ? (1 | 256) : 0;
@@ -2279,6 +2280,7 @@ int check_prefs_changed_gfx(void)
 		currprefs.genlock_offset_y = changed_prefs.genlock_offset_y;
 		currprefs.genlock_raster = changed_prefs.genlock_raster;
 		currprefs.genlock_raster_vdelay = changed_prefs.genlock_raster_vdelay;
+		currprefs.genlock_raster_hdelay = changed_prefs.genlock_raster_hdelay;
 		currprefs.genlock_control = changed_prefs.genlock_control;
 		_tcscpy(currprefs.genlock_image_file, changed_prefs.genlock_image_file);
 		_tcscpy(currprefs.genlock_video_file, changed_prefs.genlock_video_file);

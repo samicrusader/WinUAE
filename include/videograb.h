@@ -28,4 +28,6 @@ void videograb_update_sound(float clk);
 void setvideograbtarget(int width, int height, bool keep_aspect);
 /* the frame last returned by getvideograb() was scaled to that target */
 bool getvideograbprescaled(void);
+/* the decoded stream's own frame size, before any scaling */
+bool getvideograbsourcesize(int *width, int *height);
 #endif

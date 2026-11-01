@@ -780,6 +780,15 @@ void VGL_CALL vgl_start(vg_state *s)
 	s->thr = std::thread(vg_thread, s);
 }
 
+bool VGL_CALL vgl_source_size(vg_state *s, int *width, int *height)
+{
+	if (!s->vdec || s->vdec->width <= 0 || s->vdec->height <= 0)
+		return false;
+	*width = s->vdec->width;
+	*height = s->vdec->height;
+	return true;
+}
+
 void VGL_CALL vgl_stop(vg_state *s)
 {
 	{
