@@ -2746,6 +2746,23 @@ static void genlock_raster_build_taps(int xoffset, int xchange, int area, int hd
 	}
 }
 
+/*
+ * The genlock's sync timing, as raster delays of the Amiga picture against
+ * the video. Under ERSY the genlock resets the Amiga's counters. Locked to a
+ * picture at its input, its sync puts the Amiga 4 field lines lower and
+ * about 7.5 samples right of where the Amiga's own timing would; with no
+ * input it free-runs and the Amiga sits at its own timing (Ari's A2000 under
+ * EPG Esquire, captured with colour bars in and with nothing in). Explicit
+ * genlock_raster_vdelay/hdelay values override this.
+ */
+#define GENLOCK_RASTER_LOCKED_VDELAY 4
+#define GENLOCK_RASTER_LOCKED_HDELAY 7
+static bool genlock_raster_locked(void)
+{
+	// none and noise are no signal at the input
+	return currprefs.genlock_image >= 2 && !genlock_error;
+}
+
 static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, const struct genlock_raster_src *g)
 {
 	struct vidbuf_description *avidinfo = &adisplays[dst->monitor_id].gfxvidinfo;
@@ -2772,7 +2789,11 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 	const int vtop = vh == 486 ? 0 : 4; // 486-line row of the video's row 0
 	const int vx0 = (GENLOCK_RASTER_W - vw) / 2 + currprefs.genlock_offset_x;
 	const int vy0 = vtop - crop + currprefs.genlock_offset_y;
-	const int hdelay = currprefs.genlock_raster_hdelay;
+	const bool locked = genlock_raster_locked();
+	const int vdelay = currprefs.genlock_raster_vdelay != GENLOCK_RASTER_DELAY_AUTO ? currprefs.genlock_raster_vdelay :
+		(locked ? GENLOCK_RASTER_LOCKED_VDELAY : 0);
+	const int hdelay = currprefs.genlock_raster_hdelay != GENLOCK_RASTER_DELAY_AUTO ? currprefs.genlock_raster_hdelay :
+		(locked ? GENLOCK_RASTER_LOCKED_HDELAY : 0);
 	if (vw < 16)
 		return false;
 
@@ -2797,7 +2818,7 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 	// many field lines lower; the video does not move. Field lines, so the
 	// field each raster row belongs to is unchanged.
 	const int f0 = (g->ystart - 1) * 2 + crop;
-	const int fa = f0 - currprefs.genlock_raster_vdelay * 2;
+	const int fa = f0 - vdelay * 2;
 
 	if (genlock_raster_geom[0] != src->xoffset || genlock_raster_geom[1] != xchange || genlock_raster_geom[2] != area ||
 		genlock_raster_geom[3] != rh || genlock_raster_geom[4] != fa || genlock_raster_geom[5] != src->inwidth ||
@@ -2817,7 +2838,7 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 			_T("raster line 0 = frame line %d (yoffset %d ystart %d minfirstline %d), Amiga vdelay %d (Amiga row 0 = frame line %d) hdelay %d, video %dx%d at %d,%d\n"),
 			rh, g->xstart, g->xend, area, vw, r0, r0 + GENLOCK_RASTER_W * k,
 			src->xoffset, src->xoffset + src->inwidth * xchange, xchange,
-			f0, src->yoffset, g->ystart, minfirstline, currprefs.genlock_raster_vdelay, fa, hdelay, vw, vh, vx0, vy0);
+			f0, src->yoffset, g->ystart, minfirstline, vdelay, fa, hdelay, vw, vh, vx0, vy0);
 	}
 
 	int w = GENLOCK_RASTER_W, h = rh;

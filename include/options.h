@@ -694,6 +694,7 @@ struct uae_prefs {
 	int genlock_raster; // 0 off, 1 BT.601 720x480, 2 BT.601 720x486 (NTSC only)
 	int genlock_raster_vdelay; // field lines the genlock's sync puts the Amiga below the video (raster only)
 	int genlock_raster_hdelay; // samples the genlock's sync puts the Amiga right of the video (raster only)
+#define GENLOCK_RASTER_DELAY_AUTO -1000 // delays not set: what the genlock does with or without an input
 	TCHAR genlock_image_file[MAX_DPATH];
 	TCHAR genlock_video_file[MAX_DPATH];
 	int genlock_ld_offset;

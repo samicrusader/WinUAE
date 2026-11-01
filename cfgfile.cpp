@@ -2649,8 +2649,10 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 	cfgfile_dwrite_bool(f, _T("genlock_audio_mute"), p->genlock_audio_mute);
 	cfgfile_dwrite_strarr(f, _T("genlock_control"), genlockcontrol, p->genlock_control);
 	cfgfile_dwrite_strarr(f, _T("genlock_raster"), genlockraster, p->genlock_raster);
-	cfgfile_dwrite(f, _T("genlock_raster_vdelay"), _T("%d"), p->genlock_raster_vdelay);
-	cfgfile_dwrite(f, _T("genlock_raster_hdelay"), _T("%d"), p->genlock_raster_hdelay);
+	if (p->genlock_raster_vdelay != GENLOCK_RASTER_DELAY_AUTO)
+		cfgfile_dwrite(f, _T("genlock_raster_vdelay"), _T("%d"), p->genlock_raster_vdelay);
+	if (p->genlock_raster_hdelay != GENLOCK_RASTER_DELAY_AUTO)
+		cfgfile_dwrite(f, _T("genlock_raster_hdelay"), _T("%d"), p->genlock_raster_hdelay);
 	cfgfile_dwrite_bool(f, _T("genlock_aspect"), p->genlock_aspect);
 	cfgfile_dwrite_strarr(f, _T("genlockmode"), genlockmodes, p->genlock_image);
 	cfgfile_dwrite_str(f, _T("genlock_image"), p->genlock_image_file);
@@ -6034,6 +6036,18 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 	bool dummybool;
 	TCHAR tmpbuf[CONFIG_BLEN];
 
+	// genlock_raster_vdelay/hdelay=auto: the default, same as leaving them out
+	if (!_tcsicmp(value, _T("auto"))) {
+		if (!_tcsicmp(option, _T("genlock_raster_vdelay"))) {
+			p->genlock_raster_vdelay = GENLOCK_RASTER_DELAY_AUTO;
+			return 1;
+		}
+		if (!_tcsicmp(option, _T("genlock_raster_hdelay"))) {
+			p->genlock_raster_hdelay = GENLOCK_RASTER_DELAY_AUTO;
+			return 1;
+		}
+	}
+
 	const TCHAR *tmpp = _tcschr(option, '.');
 	if (tmpp) {
 		_tcscpy(tmpbuf, option);
@@ -8945,8 +8959,8 @@ void default_prefs (struct uae_prefs *p, bool reset, int type)
 	p->genlock_image = 0;
 	p->genlock_control = 0;
 	p->genlock_raster = 0;
-	p->genlock_raster_vdelay = 0;
-	p->genlock_raster_hdelay = 0;
+	p->genlock_raster_vdelay = GENLOCK_RASTER_DELAY_AUTO;
+	p->genlock_raster_hdelay = GENLOCK_RASTER_DELAY_AUTO;
 	p->genlock_stream[0] = 0;
 	p->genlock_video_scaler = 4;	// bicubic
 	p->genlock_video_deinterlace = 0;
@@ -9182,8 +9196,8 @@ static void buildin_default_prefs (struct uae_prefs *p)
 	p->genlock_image = 0;
 	p->genlock_control = 0;
 	p->genlock_raster = 0;
-	p->genlock_raster_vdelay = 0;
-	p->genlock_raster_hdelay = 0;
+	p->genlock_raster_vdelay = GENLOCK_RASTER_DELAY_AUTO;
+	p->genlock_raster_hdelay = GENLOCK_RASTER_DELAY_AUTO;
 	p->genlock_image_file[0] = 0;
 	p->genlock_font[0] = 0;
 	
