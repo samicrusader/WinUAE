@@ -9544,6 +9544,12 @@ static const TCHAR *genlock_raster_names[] = {
 	_T("Off (composite at the Amiga resolution)"), _T("720x480 (SMPTE RP 202 / DV, NTSC only)"),
 	_T("720x486 (full BT.601 525-line, NTSC only)"), NULL
 };
+/* value order matches cfgfile.cpp genlockrastercard */
+static const TCHAR *genlock_raster_card_names[] = {
+	_T("Automatic (from the machine)"),
+	_T("MC1378 (EPG Esquire): 4 lines, 7 samples"),
+	_T("UVGEN (Sneak Prevue): 22 lines, 0 samples"), NULL
+};
 
 /* edit box to int: not a number keeps the old value, out of range clamps */
 static void genlock_get_int(HWND hDlg, int id, int *v, int min, int max)
@@ -9590,6 +9596,7 @@ static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wPara
 		SetDlgItemText(hDlg, IDC_GENLOCK_FILTER, workprefs.genlock_video_filter);
 		CheckDlgButton(hDlg, IDC_GENLOCK_AUDIO_MUTE, workprefs.genlock_audio_mute);
 		genlock_fill_combo(hDlg, IDC_GENLOCK_RASTER, genlock_raster_names, workprefs.genlock_raster);
+		genlock_fill_combo(hDlg, IDC_GENLOCK_RASTER_CARD, genlock_raster_card_names, workprefs.genlock_raster_card);
 		SetDlgItemInt(hDlg, IDC_GENLOCK_OFFSET_X, workprefs.genlock_offset_x, TRUE);
 		SetDlgItemInt(hDlg, IDC_GENLOCK_OFFSET_Y, workprefs.genlock_offset_y, TRUE);
 		SetDlgItemInt(hDlg, IDC_GENLOCK_SCALE, workprefs.genlock_scale, TRUE);
@@ -9614,6 +9621,9 @@ static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wPara
 			r = xSendDlgItemMessage(hDlg, IDC_GENLOCK_RASTER, CB_GETCURSEL, 0, 0);
 			if (r != CB_ERR)
 				workprefs.genlock_raster = (int)r;
+			r = xSendDlgItemMessage(hDlg, IDC_GENLOCK_RASTER_CARD, CB_GETCURSEL, 0, 0);
+			if (r != CB_ERR)
+				workprefs.genlock_raster_card = (int)r;
 			// raster mode: X is 13.5 MHz samples (720 wide), Y is lines (525-line frame)
 			genlock_get_int(hDlg, IDC_GENLOCK_OFFSET_X, &workprefs.genlock_offset_x, -720, 720);
 			genlock_get_int(hDlg, IDC_GENLOCK_OFFSET_Y, &workprefs.genlock_offset_y, -525, 525);
