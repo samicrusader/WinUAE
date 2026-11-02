@@ -27,6 +27,7 @@
 #endif
 #include "arcadia.h"
 #include "pioneerld.h"
+#include "rommgr.h"
 #include "uae/attributes.h"
 
 const TCHAR *specialmonitorfriendlynames[] =
@@ -2701,7 +2702,7 @@ struct genlock_raster_tap
 	int n;
 };
 static struct genlock_raster_tap genlock_raster_taps[GENLOCK_RASTER_W];
-static int genlock_raster_geom[7] = { -1, -1, -1, -1, -1, -1, -1 };
+static int genlock_raster_geom[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
 static bool genlock_raster_clip_logged;
 
 struct genlock_raster_src
@@ -2748,19 +2749,61 @@ static void genlock_raster_build_taps(int xoffset, int xchange, int area, int hd
 
 /*
  * The genlock's sync timing, as raster delays of the Amiga picture against
- * the video. Under ERSY the genlock resets the Amiga's counters. Locked to a
- * picture at its input, its sync puts the Amiga 4 field lines lower and
- * about 7.5 samples right of where the Amiga's own timing would; with no
- * input it free-runs and the Amiga sits at its own timing (Ari's A2000 under
- * EPG Esquire, captured with colour bars in and with nothing in). Explicit
- * genlock_raster_vdelay/hdelay values override this.
+ * the video. Under ERSY the genlock resets the Amiga's counters, so the
+ * delays belong to the genlock card (genlock_raster_card):
+ *
+ * MC1378 (UV's genlock under EPG Esquire): locked to a picture at its input,
+ * its sync puts the Amiga 4 field lines lower and about 7.5 samples right of
+ * where the Amiga's own timing would; with no input it free-runs and the
+ * Amiga sits at its own timing (Ari's A2000 under EPG Esquire, captured with
+ * colour bars in and with nothing in).
+ *
+ * UVGEN (UV's XC3030 card under Sneak Prevue): 22 field lines, 0 samples,
+ * from photos of Ari's unit on a TV with the LaserDisc player connected and
+ * idle (its video still feeds the genlock): the locked placement. Free-run
+ * is not measured, so it uses the same values.
+ *
+ * auto takes the UVGEN for the Sneak Prevue machine (the UV multiserial
+ * card, the Pioneer LaserDisc source or genlock_control=fader, which is
+ * supergen.library's fader-only control), else the MC1378. Explicit
+ * genlock_raster_vdelay/hdelay values override all of this.
  */
-#define GENLOCK_RASTER_LOCKED_VDELAY 4
-#define GENLOCK_RASTER_LOCKED_HDELAY 7
+struct genlock_raster_card_delays {
+	const TCHAR *name;
+	int locked_vdelay, locked_hdelay;
+	int free_vdelay, free_hdelay;
+};
+static const struct genlock_raster_card_delays genlock_raster_cards[] = {
+	{ NULL, 0, 0, 0, 0 }, // GENLOCK_RASTER_CARD_AUTO: resolved below
+	{ _T("mc1378"), 4, 7, 0, 0 },
+	{ _T("uvgen"), 22, 0, 22, 0 },
+};
 static bool genlock_raster_locked(void)
 {
 	// none and noise are no signal at the input
 	return currprefs.genlock_image >= 2 && !genlock_error;
+}
+static int genlock_raster_card(const TCHAR **why)
+{
+	const int c = currprefs.genlock_raster_card;
+	if (c == GENLOCK_RASTER_CARD_MC1378 || c == GENLOCK_RASTER_CARD_UVGEN) {
+		*why = _T("set");
+		return c;
+	}
+	if (is_board_enabled(&currprefs, ROMTYPE_UVSERIAL, 0)) {
+		*why = _T("auto: UV multiserial card");
+		return GENLOCK_RASTER_CARD_UVGEN;
+	}
+	if (currprefs.genlock_image >= 8) {
+		*why = _T("auto: pioneer_ld source");
+		return GENLOCK_RASTER_CARD_UVGEN;
+	}
+	if (currprefs.genlock_control == GENLOCK_CONTROL_FADER) {
+		*why = _T("auto: genlock_control=fader");
+		return GENLOCK_RASTER_CARD_UVGEN;
+	}
+	*why = _T("auto");
+	return GENLOCK_RASTER_CARD_MC1378;
 }
 
 /*
@@ -2899,10 +2942,13 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 	const int vx0 = (GENLOCK_RASTER_W - vw) / 2 + currprefs.genlock_offset_x;
 	const int vy0 = vtop - crop + currprefs.genlock_offset_y;
 	const bool locked = genlock_raster_locked();
+	const TCHAR *cardwhy;
+	const int card = genlock_raster_card(&cardwhy);
+	const struct genlock_raster_card_delays *cd = &genlock_raster_cards[card];
 	const int vdelay = currprefs.genlock_raster_vdelay != GENLOCK_RASTER_DELAY_AUTO ? currprefs.genlock_raster_vdelay :
-		(locked ? GENLOCK_RASTER_LOCKED_VDELAY : 0);
+		(locked ? cd->locked_vdelay : cd->free_vdelay);
 	const int hdelay = currprefs.genlock_raster_hdelay != GENLOCK_RASTER_DELAY_AUTO ? currprefs.genlock_raster_hdelay :
-		(locked ? GENLOCK_RASTER_LOCKED_HDELAY : 0);
+		(locked ? cd->locked_hdelay : cd->free_hdelay);
 	if (vw < 16)
 		return false;
 
@@ -2931,7 +2977,7 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 
 	if (genlock_raster_geom[0] != src->xoffset || genlock_raster_geom[1] != xchange || genlock_raster_geom[2] != area ||
 		genlock_raster_geom[3] != rh || genlock_raster_geom[4] != fa || genlock_raster_geom[5] != src->inwidth ||
-		genlock_raster_geom[6] != hdelay) {
+		genlock_raster_geom[6] != hdelay || genlock_raster_geom[7] != card) {
 		genlock_raster_geom[0] = src->xoffset;
 		genlock_raster_geom[1] = xchange;
 		genlock_raster_geom[2] = area;
@@ -2939,15 +2985,18 @@ static bool genlock_raster_draw(struct vidbuffer *src, struct vidbuffer *dst, co
 		genlock_raster_geom[4] = fa;
 		genlock_raster_geom[5] = src->inwidth;
 		genlock_raster_geom[6] = hdelay;
+		genlock_raster_geom[7] = card;
 		genlock_raster_build_taps(src->xoffset, xchange, area, hdelay);
 		genlock_raster_clip_logged = false;
 		const double k = (double)GENLOCK_RASTER_LINE_SHRES / GENLOCK_RASTER_LINE_SAMPLES;
 		double r0 = GENLOCK_RASTER_AREA_X0 + area / 2.0 - (GENLOCK_RASTER_W / 2 + hdelay) * k;
 		write_log(_T("GENLOCK: raster 720x%d: area %d-%d (%d shres, %d samples), raster shres %.1f-%.1f, buffer shres %d-%d (x%d), ")
-			_T("raster line 0 = frame line %d (yoffset %d ystart %d minfirstline %d), Amiga vdelay %d (Amiga row 0 = frame line %d) hdelay %d, video %dx%d at %d,%d\n"),
+			_T("raster line 0 = frame line %d (yoffset %d ystart %d minfirstline %d), card %s (%s, %s), Amiga vdelay %d%s (Amiga row 0 = frame line %d) hdelay %d%s, video %dx%d at %d,%d\n"),
 			rh, g->xstart, g->xend, area, vw, r0, r0 + GENLOCK_RASTER_W * k,
 			src->xoffset, src->xoffset + src->inwidth * xchange, xchange,
-			f0, src->yoffset, g->ystart, minfirstline, vdelay, fa, hdelay, vw, vh, vx0, vy0);
+			f0, src->yoffset, g->ystart, minfirstline, cd->name, cardwhy, locked ? _T("locked") : _T("free-running"),
+			vdelay, currprefs.genlock_raster_vdelay != GENLOCK_RASTER_DELAY_AUTO ? _T(" set") : _T(""), fa,
+			hdelay, currprefs.genlock_raster_hdelay != GENLOCK_RASTER_DELAY_AUTO ? _T(" set") : _T(""), vw, vh, vx0, vy0);
 	}
 
 	int w = GENLOCK_RASTER_W, h = rh;

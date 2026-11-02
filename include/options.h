@@ -697,6 +697,10 @@ struct uae_prefs {
 	int genlock_raster_hdelay; // samples the genlock's sync puts the Amiga right of the video (raster only)
 #define GENLOCK_RASTER_DELAY_AUTO -1000 // delays not set: what the genlock does with or without an input
 	int genlock_raster_border; // GENLOCK_RASTER_BORDER_*: what the raster shows in the Amiga's border
+	int genlock_raster_card; // GENLOCK_RASTER_CARD_*: whose sync timing the auto raster delays follow
+#define GENLOCK_RASTER_CARD_AUTO 0 // from the machine: UVGEN for the Sneak Prevue setup, else MC1378
+#define GENLOCK_RASTER_CARD_MC1378 1 // UV's MC1378 genlock (EPG Esquire)
+#define GENLOCK_RASTER_CARD_UVGEN 2 // UV's XC3030 UVGEN (Sneak Prevue)
 #define GENLOCK_RASTER_BORDER_VIDEO 0 // keyed like colour 0 (video in Overlay, colour 0 in Computer Only)
 #define GENLOCK_RASTER_BORDER_BLACK 1 // black, except in Ext. Video Only
 #define GENLOCK_RASTER_BORDER_COLOR0 2 // colour 0, never keyed, except in Ext. Video Only
