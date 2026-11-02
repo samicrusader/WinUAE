@@ -9550,6 +9550,12 @@ static const TCHAR *genlock_raster_card_names[] = {
 	_T("MC1378 (EPG Esquire): 4 lines, 7 samples"),
 	_T("UVGEN (Sneak Prevue): 22 lines, 0 samples"), NULL
 };
+/* value order matches cfgfile.cpp genlockrasterborder */
+static const TCHAR *genlock_raster_border_names[] = {
+	_T("Video (keyed like colour 0)"),
+	_T("Black (except Ext. Video Only)"),
+	_T("Colour 0 (except Ext. Video Only)"), NULL
+};
 
 /* edit box to int: not a number keeps the old value, out of range clamps */
 static void genlock_get_int(HWND hDlg, int id, int *v, int min, int max)
@@ -9597,6 +9603,7 @@ static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wPara
 		CheckDlgButton(hDlg, IDC_GENLOCK_AUDIO_MUTE, workprefs.genlock_audio_mute);
 		genlock_fill_combo(hDlg, IDC_GENLOCK_RASTER, genlock_raster_names, workprefs.genlock_raster);
 		genlock_fill_combo(hDlg, IDC_GENLOCK_RASTER_CARD, genlock_raster_card_names, workprefs.genlock_raster_card);
+		genlock_fill_combo(hDlg, IDC_GENLOCK_RASTER_BORDER, genlock_raster_border_names, workprefs.genlock_raster_border);
 		SetDlgItemInt(hDlg, IDC_GENLOCK_OFFSET_X, workprefs.genlock_offset_x, TRUE);
 		SetDlgItemInt(hDlg, IDC_GENLOCK_OFFSET_Y, workprefs.genlock_offset_y, TRUE);
 		SetDlgItemInt(hDlg, IDC_GENLOCK_SCALE, workprefs.genlock_scale, TRUE);
@@ -9624,6 +9631,9 @@ static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wPara
 			r = xSendDlgItemMessage(hDlg, IDC_GENLOCK_RASTER_CARD, CB_GETCURSEL, 0, 0);
 			if (r != CB_ERR)
 				workprefs.genlock_raster_card = (int)r;
+			r = xSendDlgItemMessage(hDlg, IDC_GENLOCK_RASTER_BORDER, CB_GETCURSEL, 0, 0);
+			if (r != CB_ERR)
+				workprefs.genlock_raster_border = (int)r;
 			// raster mode: X is 13.5 MHz samples (720 wide), Y is lines (525-line frame)
 			genlock_get_int(hDlg, IDC_GENLOCK_OFFSET_X, &workprefs.genlock_offset_x, -720, 720);
 			genlock_get_int(hDlg, IDC_GENLOCK_OFFSET_Y, &workprefs.genlock_offset_y, -525, 525);

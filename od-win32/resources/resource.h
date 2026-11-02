@@ -447,6 +447,7 @@
 #define IDC_UVSER0_SPEED                1915
 #define IDC_UVSER0_CDFEED               1916
 #define IDC_GENLOCK_RASTER_CARD         1947
+#define IDC_GENLOCK_RASTER_BORDER       1948
 #define IDC_UVSER1_MODE                 1920
 #define IDC_UVSER1_ADDR                 1921
 #define IDC_UVSER1_PORT                 1922
@@ -1503,7 +1504,7 @@
 #define _APS_3D_CONTROLS                     1
 #define _APS_NEXT_RESOURCE_VALUE        411
 #define _APS_NEXT_COMMAND_VALUE         40054
-#define _APS_NEXT_CONTROL_VALUE         1948
+#define _APS_NEXT_CONTROL_VALUE         1949
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
