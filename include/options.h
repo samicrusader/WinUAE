@@ -711,6 +711,7 @@ struct uae_prefs {
 	bool genlock_audio_mute;
 	TCHAR genlock_ld_stops[MAX_DPATH];
 	TCHAR genlock_ld_discid[16];
+	TCHAR genlock_ld_ucprefix[8];	/* Key Data prefix the player reports for ?U ("" = "DD", Sneak; "PG" = Prevue Laser) */
 	TCHAR uvserial_port[4][256];		/* UV card unit n backend: TCP://host:port[/connect[/noreconnect]] or MODEM://[host:port][/raw][/speed=N] ("" = none) */
 	TCHAR uvserial_cd_feed[4][256];		/* UV card unit n CD level feed host:port[/connect] ("" = CD follows the client or the modem) */
 	TCHAR genlock_font[MAX_DPATH];

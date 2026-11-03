@@ -2667,6 +2667,7 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 	cfgfile_dwrite_str(f, _T("genlock_video"), p->genlock_video_file);
 	cfgfile_dwrite(f, _T("genlock_ld_offset"), _T("%d"), p->genlock_ld_offset);
 	cfgfile_dwrite_str(f, _T("genlock_ld_discid"), p->genlock_ld_discid);
+	cfgfile_dwrite_str(f, _T("genlock_ld_ucprefix"), p->genlock_ld_ucprefix);
 	for (int i = 0; i < 4; i++) {
 		TCHAR name[64];
 		_stprintf(name, _T("uvserial_port%d"), i);
@@ -6347,6 +6348,7 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_string(option, value, _T("genlock_video"), p->genlock_video_file, sizeof p->genlock_video_file / sizeof(TCHAR))
 		|| cfgfile_intval(option, value, _T("genlock_ld_offset"), &p->genlock_ld_offset, 1)
 		|| cfgfile_string(option, value, _T("genlock_ld_discid"), p->genlock_ld_discid, sizeof p->genlock_ld_discid / sizeof(TCHAR))
+		|| cfgfile_string(option, value, _T("genlock_ld_ucprefix"), p->genlock_ld_ucprefix, sizeof p->genlock_ld_ucprefix / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_ld_stops"), p->genlock_ld_stops, sizeof p->genlock_ld_stops / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_font"), p->genlock_font, sizeof p->genlock_font / sizeof(TCHAR))
 		|| cfgfile_string(option, value, _T("genlock_stream"), p->genlock_stream, sizeof p->genlock_stream / sizeof(TCHAR))

@@ -427,6 +427,7 @@
 #define IDC_GENLOCK_LD_DISCID           1893
 #define IDC_GENLOCK_LD_STOPS            1894
 #define IDC_GENLOCK_LD_STOPSSELECT      1895
+#define IDC_GENLOCK_LD_UCPREFIX         1949
 #define IDC_GENLOCK_AUDIO_MUTE          1896
 #define IDC_GENLOCK_RASTER              1897
 #define IDC_GENLOCK_OFFSET_X            1898
@@ -1504,7 +1505,7 @@
 #define _APS_3D_CONTROLS                     1
 #define _APS_NEXT_RESOURCE_VALUE        411
 #define _APS_NEXT_COMMAND_VALUE         40054
-#define _APS_NEXT_CONTROL_VALUE         1949
+#define _APS_NEXT_CONTROL_VALUE         1950
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

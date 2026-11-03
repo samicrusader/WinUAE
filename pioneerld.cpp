@@ -74,6 +74,20 @@ int log_pioneerld = 1;
  * disc label. */
 #define LD_UC_KEY_PREFIX "DD"
 
+/* The Prevue Laser / Laser Guide builds of ESQ 7.8.2c (PL.REL, LG*.REL) read
+ * the same Key Data field but want it to start with "PG" (their disc check
+ * takes the first 7 non-space characters there: "PG" + the disc id), so the
+ * prefix is a config option; empty keeps the Sneak "DD". */
+static void ld_get_uc_prefix(char *out, int outsize)
+{
+	int n = 0;
+	for (; n < outsize - 1 && currprefs.genlock_ld_ucprefix[n]; n++)
+		out[n] = (char)currprefs.genlock_ld_ucprefix[n];
+	out[n] = 0;
+	if (!n)
+		strcpy(out, LD_UC_KEY_PREFIX);
+}
+
 static bool ld_registered;
 /* set by custom_init() (emulator start, config load): the next activation powers the player on */
 static bool ld_power_pending = true;
@@ -212,8 +226,10 @@ static void reply_user_code(void)
 	ld_get_disc_id(id, sizeof id);
 	memset(uc, ' ', sizeof uc);
 
-	int n = (int)strlen(LD_UC_KEY_PREFIX);
-	memcpy(uc + LD_UC_KEY_OFFSET, LD_UC_KEY_PREFIX, n);
+	char pfx[8];
+	ld_get_uc_prefix(pfx, sizeof pfx);
+	int n = (int)strlen(pfx);
+	memcpy(uc + LD_UC_KEY_OFFSET, pfx, n);
 	int idlen = (int)strlen(id);
 	if (n + idlen > LD_UC_KEY_LEN)
 		idlen = LD_UC_KEY_LEN - n;
@@ -221,7 +237,7 @@ static void reply_user_code(void)
 
 	if (log_pioneerld)
 		write_log(_T("PIONEERLD: -> user code, key data \"%hs%hs\"\n"),
-			LD_UC_KEY_PREFIX, id);
+			pfx, id);
 	tx_raw(uc, LD_UC_TOTAL);
 }
 

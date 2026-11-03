@@ -9695,6 +9695,8 @@ static INT_PTR CALLBACK GenlockLDDialogProc(HWND hDlg, UINT msg, WPARAM wParam, 
 		SetDlgItemInt(hDlg, IDC_GENLOCK_LD_OFFSET, workprefs.genlock_ld_offset, TRUE);
 		xSendDlgItemMessage(hDlg, IDC_GENLOCK_LD_DISCID, EM_LIMITTEXT, sizeof workprefs.genlock_ld_discid / sizeof(TCHAR) - 1, 0);
 		SetDlgItemText(hDlg, IDC_GENLOCK_LD_DISCID, workprefs.genlock_ld_discid);
+		xSendDlgItemMessage(hDlg, IDC_GENLOCK_LD_UCPREFIX, EM_LIMITTEXT, sizeof workprefs.genlock_ld_ucprefix / sizeof(TCHAR) - 1, 0);
+		SetDlgItemText(hDlg, IDC_GENLOCK_LD_UCPREFIX, workprefs.genlock_ld_ucprefix);
 		xSendDlgItemMessage(hDlg, IDC_GENLOCK_LD_STOPS, EM_LIMITTEXT, sizeof workprefs.genlock_ld_stops / sizeof(TCHAR) - 1, 0);
 		SetDlgItemText(hDlg, IDC_GENLOCK_LD_STOPS, workprefs.genlock_ld_stops);
 		return TRUE;
@@ -9717,6 +9719,7 @@ static INT_PTR CALLBACK GenlockLDDialogProc(HWND hDlg, UINT msg, WPARAM wParam, 
 			if (ok)	// not a number: keep the old value
 				workprefs.genlock_ld_offset = offset;
 			GetDlgItemText(hDlg, IDC_GENLOCK_LD_DISCID, workprefs.genlock_ld_discid, sizeof workprefs.genlock_ld_discid / sizeof(TCHAR));
+			GetDlgItemText(hDlg, IDC_GENLOCK_LD_UCPREFIX, workprefs.genlock_ld_ucprefix, sizeof workprefs.genlock_ld_ucprefix / sizeof(TCHAR));
 			GetDlgItemText(hDlg, IDC_GENLOCK_LD_STOPS, workprefs.genlock_ld_stops, sizeof workprefs.genlock_ld_stops / sizeof(TCHAR));
 			CustomDialogClose(hDlg, 1);
 			return TRUE;
