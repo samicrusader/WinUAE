@@ -9548,7 +9548,7 @@ static const TCHAR *genlock_raster_names[] = {
 static const TCHAR *genlock_raster_card_names[] = {
 	_T("Automatic (from the machine)"),
 	_T("MC1378 (EPG Esquire): 4 lines, 7 samples"),
-	_T("UVGEN (Sneak Prevue): 22 lines, 0 samples"), NULL
+	_T("UVGEN (Sneak Prevue): 4 lines, 0 samples"), NULL
 };
 /* value order matches cfgfile.cpp genlockrasterborder */
 static const TCHAR *genlock_raster_border_names[] = {
@@ -9569,6 +9569,33 @@ static void genlock_get_int(HWND hDlg, int id, int *v, int min, int max)
 	if (n > max)
 		n = max;
 	*v = n;
+}
+
+/* raster delay edit box: empty = GENLOCK_RASTER_DELAY_AUTO */
+static void genlock_set_delay(HWND hDlg, int id, int v)
+{
+	if (v == GENLOCK_RASTER_DELAY_AUTO)
+		SetDlgItemText(hDlg, id, _T(""));
+	else
+		SetDlgItemInt(hDlg, id, v, TRUE);
+}
+
+static void genlock_get_delay(HWND hDlg, int id, int *v, int min, int max)
+{
+	TCHAR tmp[16];
+	GetDlgItemText(hDlg, id, tmp, sizeof tmp / sizeof(TCHAR));
+	bool empty = true;
+	for (TCHAR *p = tmp; *p; p++) {
+		if (*p != ' ' && *p != '\t')
+			empty = false;
+	}
+	if (empty) {
+		*v = GENLOCK_RASTER_DELAY_AUTO;
+		return;
+	}
+	if (*v == GENLOCK_RASTER_DELAY_AUTO)
+		*v = 0;	// so a non-number below doesn't leave auto looking set
+	genlock_get_int(hDlg, id, v, min, max);
 }
 
 static void genlock_fill_combo(HWND hDlg, int id, const TCHAR **names, int sel)
@@ -9604,6 +9631,8 @@ static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wPara
 		genlock_fill_combo(hDlg, IDC_GENLOCK_RASTER, genlock_raster_names, workprefs.genlock_raster);
 		genlock_fill_combo(hDlg, IDC_GENLOCK_RASTER_CARD, genlock_raster_card_names, workprefs.genlock_raster_card);
 		genlock_fill_combo(hDlg, IDC_GENLOCK_RASTER_BORDER, genlock_raster_border_names, workprefs.genlock_raster_border);
+		genlock_set_delay(hDlg, IDC_GENLOCK_RASTER_VDELAY, workprefs.genlock_raster_vdelay);
+		genlock_set_delay(hDlg, IDC_GENLOCK_RASTER_HDELAY, workprefs.genlock_raster_hdelay);
 		SetDlgItemInt(hDlg, IDC_GENLOCK_OFFSET_X, workprefs.genlock_offset_x, TRUE);
 		SetDlgItemInt(hDlg, IDC_GENLOCK_OFFSET_Y, workprefs.genlock_offset_y, TRUE);
 		SetDlgItemInt(hDlg, IDC_GENLOCK_SCALE, workprefs.genlock_scale, TRUE);
@@ -9634,6 +9663,9 @@ static INT_PTR CALLBACK GenlockVideoDialogProc(HWND hDlg, UINT msg, WPARAM wPara
 			r = xSendDlgItemMessage(hDlg, IDC_GENLOCK_RASTER_BORDER, CB_GETCURSEL, 0, 0);
 			if (r != CB_ERR)
 				workprefs.genlock_raster_border = (int)r;
+			// raster delays: empty = auto (the timing combo's card)
+			genlock_get_delay(hDlg, IDC_GENLOCK_RASTER_VDELAY, &workprefs.genlock_raster_vdelay, -262, 262);
+			genlock_get_delay(hDlg, IDC_GENLOCK_RASTER_HDELAY, &workprefs.genlock_raster_hdelay, -720, 720);
 			// raster mode: X is 13.5 MHz samples (720 wide), Y is lines (525-line frame)
 			genlock_get_int(hDlg, IDC_GENLOCK_OFFSET_X, &workprefs.genlock_offset_x, -720, 720);
 			genlock_get_int(hDlg, IDC_GENLOCK_OFFSET_Y, &workprefs.genlock_offset_y, -525, 525);
@@ -9697,6 +9729,7 @@ static INT_PTR CALLBACK GenlockLDDialogProc(HWND hDlg, UINT msg, WPARAM wParam, 
 		SetDlgItemText(hDlg, IDC_GENLOCK_LD_DISCID, workprefs.genlock_ld_discid);
 		xSendDlgItemMessage(hDlg, IDC_GENLOCK_LD_UCPREFIX, EM_LIMITTEXT, sizeof workprefs.genlock_ld_ucprefix / sizeof(TCHAR) - 1, 0);
 		SetDlgItemText(hDlg, IDC_GENLOCK_LD_UCPREFIX, workprefs.genlock_ld_ucprefix);
+		CheckDlgButton(hDlg, IDC_GENLOCK_LD_CLV, workprefs.genlock_ld_clv);
 		xSendDlgItemMessage(hDlg, IDC_GENLOCK_LD_STOPS, EM_LIMITTEXT, sizeof workprefs.genlock_ld_stops / sizeof(TCHAR) - 1, 0);
 		SetDlgItemText(hDlg, IDC_GENLOCK_LD_STOPS, workprefs.genlock_ld_stops);
 		return TRUE;
@@ -9720,6 +9753,7 @@ static INT_PTR CALLBACK GenlockLDDialogProc(HWND hDlg, UINT msg, WPARAM wParam, 
 				workprefs.genlock_ld_offset = offset;
 			GetDlgItemText(hDlg, IDC_GENLOCK_LD_DISCID, workprefs.genlock_ld_discid, sizeof workprefs.genlock_ld_discid / sizeof(TCHAR));
 			GetDlgItemText(hDlg, IDC_GENLOCK_LD_UCPREFIX, workprefs.genlock_ld_ucprefix, sizeof workprefs.genlock_ld_ucprefix / sizeof(TCHAR));
+			workprefs.genlock_ld_clv = ischecked(hDlg, IDC_GENLOCK_LD_CLV);
 			GetDlgItemText(hDlg, IDC_GENLOCK_LD_STOPS, workprefs.genlock_ld_stops, sizeof workprefs.genlock_ld_stops / sizeof(TCHAR));
 			CustomDialogClose(hDlg, 1);
 			return TRUE;
