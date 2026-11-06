@@ -2758,10 +2758,13 @@ static void genlock_raster_build_taps(int xoffset, int xchange, int area, int hd
  * Amiga sits at its own timing (Ari's A2000 under EPG Esquire, captured with
  * colour bars in and with nothing in).
  *
- * UVGEN (UV's XC3030 card under Sneak Prevue): 22 field lines, 0 samples,
- * from photos of Ari's unit on a TV with the LaserDisc player connected and
- * idle (its video still feeds the genlock): the locked placement. Free-run
- * is not measured, so it uses the same values.
+ * UVGEN (UV's XC3030 card under Sneak Prevue): 4 field lines, 0 samples.
+ * Fitted to two 1997 MediaOne off-air tapes (async and normal screen
+ * layouts, 3.2-4.5) and consistent with photos of Ari's unit (normal layout,
+ * about -7.5..6.2). The earlier 22 came from fitting those photos with vd in
+ * its async layout (A_Screen.ini View DyOffset -22), which pushed the async
+ * ticker past the 480-line raster. Free-run is not measured, so it uses the
+ * same values (sneakprevue_work agents/uvgen-vdelay-check-20261106.md).
  *
  * auto takes the UVGEN for the Sneak Prevue machine (the UV multiserial
  * card, the Pioneer LaserDisc source or genlock_control=fader, which is
@@ -2776,7 +2779,7 @@ struct genlock_raster_card_delays {
 static const struct genlock_raster_card_delays genlock_raster_cards[] = {
 	{ NULL, 0, 0, 0, 0 }, // GENLOCK_RASTER_CARD_AUTO: resolved below
 	{ _T("mc1378"), 4, 7, 0, 0 },
-	{ _T("uvgen"), 22, 0, 22, 0 },
+	{ _T("uvgen"), 4, 0, 4, 0 },
 };
 static bool genlock_raster_locked(void)
 {
