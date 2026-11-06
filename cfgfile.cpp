@@ -2666,6 +2666,7 @@ void cfgfile_save_options (struct zfile *f, struct uae_prefs *p, int type)
 	cfgfile_dwrite_str(f, _T("genlock_image"), p->genlock_image_file);
 	cfgfile_dwrite_str(f, _T("genlock_video"), p->genlock_video_file);
 	cfgfile_dwrite(f, _T("genlock_ld_offset"), _T("%d"), p->genlock_ld_offset);
+	cfgfile_dwrite_bool(f, _T("genlock_ld_clv"), p->genlock_ld_clv);
 	cfgfile_dwrite_str(f, _T("genlock_ld_discid"), p->genlock_ld_discid);
 	cfgfile_dwrite_str(f, _T("genlock_ld_ucprefix"), p->genlock_ld_ucprefix);
 	for (int i = 0; i < 4; i++) {
@@ -6198,6 +6199,7 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, const TCHAR *option, TCH
 		|| cfgfile_yesno(option, value, _T("genlock"), &p->genlock)
 		|| cfgfile_yesno(option, value, _T("genlock_alpha"), &p->genlock_alpha)
 		|| cfgfile_yesno(option, value, _T("genlock_audio_mute"), &p->genlock_audio_mute)
+		|| cfgfile_yesno(option, value, _T("genlock_ld_clv"), &p->genlock_ld_clv)
 		|| cfgfile_yesno(option, value, _T("genlock_aspect"), &p->genlock_aspect)
 		|| cfgfile_yesno(option, value, _T("cpu_data_cache"), &p->cpu_data_cache)
 		|| cfgfile_yesno(option, value, _T("cpu_threaded"), &p->cpu_thread)

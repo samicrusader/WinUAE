@@ -709,6 +709,7 @@ struct uae_prefs {
 	TCHAR genlock_video_file[MAX_DPATH];
 	int genlock_ld_offset;
 	bool genlock_audio_mute;
+	bool genlock_ld_clv;	/* Pioneer LD-V8000: the disc is CLV (?D C2, ?F time code, stop marker ends in Pause) */
 	TCHAR genlock_ld_stops[MAX_DPATH];
 	TCHAR genlock_ld_discid[16];
 	TCHAR genlock_ld_ucprefix[8];	/* Key Data prefix the player reports for ?U ("" = "DD", Sneak; "PG" = Prevue Laser) */

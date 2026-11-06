@@ -147,6 +147,21 @@ static int ld_video_offset(void)
 	return currprefs.genlock_ld_offset;
 }
 
+/* Disc type (genlock_ld_clv, default CAV). The LD-V8000 handles the two
+ * differently (TP 113 v2.1): ?D reports C2 = 1 for CLV (4-37), ?F returns a
+ * 7 digit time code h mm ss ff instead of a 5 digit frame number (4-34), and a
+ * stop marker reached in Play ends in Pause on CLV, Still on CAV (diagram on
+ * 4-20). Picture stops are a CAV feature: "A picture stop on a CAV disc takes
+ * precedence over a SM PL command" (4-20). SE and ST end in Still on both
+ * (4-14, 4-18). Addresses need no conversion: on CLV the host sends FR time
+ * codes, which timecode_to_frame() decodes in the same base 30 numbering vd
+ * uses to build them (sub_16294), so ld_frame and the stops file keep one
+ * numbering for either disc type. */
+static bool ld_clv(void)
+{
+	return currprefs.genlock_ld_clv;
+}
+
 static void ld_get_disc_id(char *out, int outsize)
 {
 	int n = 0;
@@ -454,7 +469,8 @@ static void pioneerld_vsync(void)
 #endif
 	/* "When the stop marker address is reached in Play or Multi-Speed Mode,
 	 * Still Mode occurs and the stop marker is cleared." No completion
-	 * status is returned when the marker is reached. */
+	 * status is returned when the marker is reached. The diagram under it
+	 * (4-20) qualifies that: Still on a CAV disc, Pause on CLV (and CD). */
 	/* Whichever comes first wins. The marker must not merely GATE the picture
 	 * stop: vd arms markers it then abandons by moving on early, and a marker
 	 * that is pending-but-never-reached stays armed, which used to disable
@@ -468,8 +484,9 @@ static void pioneerld_vsync(void)
 	if (ld_mark_set && prev_frame < ld_mark && ld_frame >= ld_mark) {
 		ld_mark_set = false;
 		if (log_pioneerld)
-			write_log(_T("PIONEERLD: stop marker %lld reached\n"), ld_mark);
-		set_mode(LD_P_STILL);
+			write_log(_T("PIONEERLD: stop marker %lld reached%s\n"), ld_mark,
+				ld_clv() ? _T(" (CLV: pause)") : _T(""));
+		set_mode(ld_clv() ? LD_P_PAUSE : LD_P_STILL);
 	} else if (ld_stop_target && ld_frame >= ld_stop_target &&
 		   !(ld_mark_set && ld_mark > ld_stop_target)) {
 		/* An armed marker BEYOND this stop means vd has explicitly asked to
@@ -491,10 +508,16 @@ static void pioneerld_vsync(void)
 		 * VBI, so stop at the segment boundary the disc directory gives us.
 		 * A marker always wins: Sneak only omits one when it is relying on
 		 * the disc to stop the player. */
+		/* A CLV disc has no picture stops to press (4-20: picture stops are
+		 * a CAV feature). If a stops file is configured for one anyway, its
+		 * entries are treated as stop points that end the way the player's
+		 * own stop marker ends on CLV, in Pause, so the table stays usable
+		 * without making the player do something a CLV disc cannot. */
 		if (log_pioneerld)
-			write_log(_T("PIONEERLD: picture stop %lld reached\n"), ld_stop_target);
+			write_log(ld_clv() ? _T("PIONEERLD: stop point %lld reached (CLV: pause)\n")
+				: _T("PIONEERLD: picture stop %lld reached\n"), ld_stop_target);
 		ld_stop_target = 0;
-		set_mode(LD_P_STILL);
+		set_mode(ld_clv() ? LD_P_PAUSE : LD_P_STILL);
 	}
 }
 
@@ -563,7 +586,8 @@ void pioneerld_activate(void)
 	ld_power_pending = false;
 	pioneerld_hard_reset(1);
 	if (!ld_registered)
-		write_log(_T("PIONEERLD: LD-V8000 emulation active\n"));
+		write_log(_T("PIONEERLD: LD-V8000 emulation active, %s disc\n"),
+			ld_clv() ? _T("CLV") : _T("CAV"));
 	else
 		write_log(_T("PIONEERLD: player powered on (parked)\n"));
 	ld_registered = true;
@@ -578,7 +602,12 @@ bool pioneerld_active(void)
 
 bool pioneerld_video_enabled(void)
 {
-	return ld_mode == LD_P_PLAY || ld_mode == LD_P_STILL;
+	/* Pause shows no picture (P06, 4-36; PA gives a blue or black screen,
+	 * 4-14), except that a frame held by DM is output from video memory
+	 * whatever the player is doing (4-41..4-44) - which is what a CLV stop
+	 * marker reached under a held frame leaves on screen. */
+	return ld_mode == LD_P_PLAY || ld_mode == LD_P_STILL ||
+		(ld_mode == LD_P_PAUSE && ld_mem_hold);
 }
 
 /* ------------------------------------------------------------ dispatch --- */
@@ -599,9 +628,10 @@ static void do_command(const char *mn, const char *arg, int arglen,
 		return;
 	}
 	if (!strcmp(mn, "?D")) {
-		/* C1 disc loading, C2 CAV/CLV, C3 size, C4 side, C5 chapter code.
-		 * A Sneak disc is a 12 inch CAV side 1 pressing with chapter codes. */
-		reply(ld_disc_loaded ? "10001" : "0XXXX");
+		/* C1 disc loading, C2 CAV/CLV (0 CAV, 1 CLV), C3 size, C4 side,
+		 * C5 chapter code. A 12 inch side 1 pressing with chapter codes;
+		 * CAV unless genlock_ld_clv (the Sneak discs are CLV, laserdisc.md). */
+		reply(!ld_disc_loaded ? "0XXXX" : ld_clv() ? "11001" : "10001");
 		res->quiet = true;
 		return;
 	}
@@ -616,7 +646,14 @@ static void do_command(const char *mn, const char *arg, int arglen,
 	}
 	if (!strcmp(mn, "?F")) {
 		char b[16];
-		sprintf(b, "%05d", (int)(ld_frame % 100000));
+		if (ld_clv()) {
+			/* CLV: 7 digit time code, h mm ss ff (4-34) */
+			int f = (int)ld_frame;
+			sprintf(b, "%1d%02d%02d%02d", (f / (3600 * LD_TC_BASE)) % 10,
+				(f / (60 * LD_TC_BASE)) % 60, (f / LD_TC_BASE) % 60, f % LD_TC_BASE);
+		} else {
+			sprintf(b, "%05d", (int)(ld_frame % 100000));
+		}
 		reply(b);
 		res->quiet = true;
 		return;
